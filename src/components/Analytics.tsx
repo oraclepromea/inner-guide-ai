@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { 
   TrendingUp, Target, Award, Clock, BookOpen, Heart, BarChart3, 
   Brain, Zap, Eye, ArrowUp, ArrowDown,
-  Lightbulb, Activity, Sparkles
+  Lightbulb, Activity, Sparkles, AlertCircle
 } from 'lucide-react';
 import { 
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
@@ -12,49 +12,65 @@ import {
 import { useAppStore } from '../stores';
 import { formatDate } from '../utils';
 import { aiService } from '../lib/aiService';
-import type { 
-  TrendAnalysis, AdvancedAnalytics, PredictiveInsight, 
-  CorrelationInsight, JournalEntry, MoodEntry
-} from '../types';
+import type { JournalEntry, MoodEntry } from '../types';
 
 interface AnalyticsProps {
   className?: string;
+}
+
+interface TrendAnalysis {
+  period: string;
+  moodTrend: 'improving' | 'declining' | 'stable';
+  writingFrequency: 'increasing' | 'decreasing' | 'stable';
+  emotionalPatterns: string[];
+  recommendations: string[];
+  insights: string[];
 }
 
 export const Analytics: React.FC<AnalyticsProps> = ({ className = '' }) => {
   const { journalEntries, moodEntries } = useAppStore();
   const [activeInsightTab, setActiveInsightTab] = useState<'overview' | 'trends' | 'predictions' | 'correlations'>('overview');
   const [trendAnalysis, setTrendAnalysis] = useState<TrendAnalysis | null>(null);
-  const [advancedAnalytics, setAdvancedAnalytics] = useState<AdvancedAnalytics | null>(null);
   const [isLoadingInsights, setIsLoadingInsights] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
-  // Load AI insights
+  // REAL DATA ONLY: Load AI insights only if API is configured and data exists
   useEffect(() => {
     const loadInsights = async () => {
-      if (journalEntries.length === 0 && moodEntries.length === 0) return;
+      if (journalEntries.length === 0 && moodEntries.length === 0) {
+        setTrendAnalysis(null);
+        setAiError(null);
+        return;
+      }
       
       setIsLoadingInsights(true);
+      setAiError(null);
+      
       try {
         const trends = await aiService.analyzeTrends(journalEntries, moodEntries, 'month');
-        // Transform the data to match the expected TrendAnalysis type
-        const transformedTrends: TrendAnalysis = {
-          period: 'month',
-          moodTrend: trends.moodTrend || 'stable',
-          writingFrequency: trends.writingFrequency === 'consistent' ? 'stable' : (trends.writingFrequency || 'stable'),
-          emotionalPatterns: Array.isArray(trends.emotionalPatterns) 
-            ? trends.emotionalPatterns.map((p: any) => typeof p === 'string' ? p : p.pattern || p.name || String(p))
-            : [],
-          recommendations: Array.isArray(trends.recommendations) 
-            ? trends.recommendations.map((r: any) => typeof r === 'string' ? r : r.action || r.text || String(r))
-            : [],
-          insights: [] // Default empty array since this property doesn't exist in the source data
-        };
-        setTrendAnalysis(transformedTrends);
         
-        const advanced = await generateAdvancedAnalytics(journalEntries, moodEntries);
-        setAdvancedAnalytics(advanced);
+        if (trends) {
+          const transformedTrends: TrendAnalysis = {
+            period: 'month',
+            moodTrend: trends.moodTrend || 'stable',
+            writingFrequency: trends.writingFrequency || 'stable',
+            emotionalPatterns: Array.isArray(trends.emotionalPatterns) 
+              ? trends.emotionalPatterns.map((p: any) => typeof p === 'string' ? p : p.pattern || p.name || String(p))
+              : [],
+            recommendations: Array.isArray(trends.recommendations) 
+              ? trends.recommendations.map((r: any) => typeof r === 'string' ? r : r.action || r.text || String(r))
+              : [],
+            insights: []
+          };
+          setTrendAnalysis(transformedTrends);
+        } else {
+          setTrendAnalysis(null);
+          setAiError('AI analysis not available. Configure OpenRouter API key to enable AI insights.');
+        }
       } catch (error) {
         console.error('Failed to load AI insights:', error);
+        setTrendAnalysis(null);
+        setAiError('Failed to load AI insights. Check your API configuration.');
       } finally {
         setIsLoadingInsights(false);
       }
@@ -68,7 +84,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ className = '' }) => {
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-    // Journal analytics
+    // REAL DATA ONLY: Journal analytics from actual entries
     const recentJournalEntries = journalEntries.filter(entry => 
       new Date(entry.createdAt) >= thirtyDaysAgo
     );
@@ -76,7 +92,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ className = '' }) => {
       new Date(entry.createdAt) >= sevenDaysAgo
     );
 
-    // Mood analytics
+    // REAL DATA ONLY: Mood analytics from actual entries
     const recentMoodEntries = moodEntries.filter(entry => 
       new Date(entry.createdAt) >= thirtyDaysAgo
     );
@@ -84,20 +100,19 @@ export const Analytics: React.FC<AnalyticsProps> = ({ className = '' }) => {
       new Date(entry.createdAt) >= sevenDaysAgo
     );
 
-    // Calculate streaks
+    // REAL DATA ONLY: Calculate actual streaks
     const journalStreak = calculateJournalStreak(journalEntries);
     const moodStreak = calculateMoodStreak(moodEntries);
 
-    // Writing patterns
+    // REAL DATA ONLY: Writing patterns from actual content
     const avgWordsPerEntry = recentJournalEntries.length > 0 
       ? Math.round(recentJournalEntries.reduce((sum, entry) => sum + entry.content.split(' ').length, 0) / recentJournalEntries.length)
       : 0;
 
     const writingTimePatterns = getWritingTimePatterns(recentJournalEntries);
-    const emotionalJourney = getEmotionalJourney(journalEntries, moodEntries);
     const personalGrowthMetrics = calculatePersonalGrowthMetrics(journalEntries, moodEntries);
 
-    // Mood trends
+    // REAL DATA ONLY: Mood trends from actual data
     const avgMoodThisWeek = weeklyMoodEntries.length > 0 
       ? (weeklyMoodEntries.reduce((sum, entry) => sum + entry.mood, 0) / weeklyMoodEntries.length).toFixed(1)
       : '0';
@@ -111,7 +126,6 @@ export const Analytics: React.FC<AnalyticsProps> = ({ className = '' }) => {
       avgMoodThisWeek,
       moodTrend,
       writingTimePatterns,
-      emotionalJourney,
       personalGrowthMetrics,
       recentJournalEntries: recentJournalEntries.length,
       recentMoodEntries: recentMoodEntries.length,
@@ -144,6 +158,8 @@ export const Analytics: React.FC<AnalyticsProps> = ({ className = '' }) => {
   }, [journalEntries, moodEntries]);
 
   const moodDistribution = useMemo(() => {
+    if (moodEntries.length === 0) return [];
+    
     const distribution = [
       { name: 'Terrible', value: moodEntries.filter(e => e.mood === 1).length, color: '#dc2626', emoji: '😢' },
       { name: 'Bad', value: moodEntries.filter(e => e.mood === 2).length, color: '#ea580c', emoji: '😕' },
@@ -155,21 +171,66 @@ export const Analytics: React.FC<AnalyticsProps> = ({ className = '' }) => {
   }, [moodEntries]);
 
   const renderInsightTab = () => {
+    if (aiError) {
+      return (
+        <div className="flex items-center justify-center p-8 text-center">
+          <div className="space-y-4">
+            <AlertCircle className="w-12 h-12 text-amber-500 mx-auto" />
+            <div>
+              <h4 className="text-lg font-semibold text-gray-200 mb-2">AI Analysis Unavailable</h4>
+              <p className="text-gray-400 text-sm">{aiError}</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (journalEntries.length === 0 && moodEntries.length === 0) {
+      return (
+        <div className="flex items-center justify-center p-8 text-center">
+          <div className="space-y-4">
+            <Brain className="w-12 h-12 text-gray-500 mx-auto" />
+            <div>
+              <h4 className="text-lg font-semibold text-gray-200 mb-2">No Data Available</h4>
+              <p className="text-gray-400 text-sm">Start journaling or tracking your mood to see AI insights</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     switch (activeInsightTab) {
       case 'trends':
         return <TrendsInsights trendAnalysis={trendAnalysis} analytics={analytics} />;
       case 'predictions':
-        return <PredictiveInsights advancedAnalytics={advancedAnalytics} />;
+        return <PredictiveInsights trendAnalysis={trendAnalysis} />;
       case 'correlations':
-        return <CorrelationInsights advancedAnalytics={advancedAnalytics} />;
+        return <CorrelationInsights trendAnalysis={trendAnalysis} />;
       default:
         return <OverviewInsights analytics={analytics} trendAnalysis={trendAnalysis} />;
     }
   };
 
+  // Show message if no data available
+  if (journalEntries.length === 0 && moodEntries.length === 0) {
+    return (
+      <div className={`space-y-8 ${className}`}>
+        <div className="flex items-center justify-center p-12 text-center bg-gradient-to-br from-slate-800/40 to-slate-700/40 backdrop-blur-sm rounded-2xl border border-slate-500/20">
+          <div className="space-y-4">
+            <BarChart3 className="w-16 h-16 text-gray-500 mx-auto" />
+            <div>
+              <h3 className="text-xl font-semibold text-gray-200 mb-2">No Analytics Available</h3>
+              <p className="text-gray-400">Start by creating journal entries or tracking your mood to see detailed analytics and insights.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`space-y-8 ${className}`}>
-      {/* Enhanced Key Metrics */}
+      {/* REAL DATA ONLY: Enhanced Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <EnhancedStatCard
           icon={<Target className="w-6 h-6" />}
@@ -200,7 +261,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ className = '' }) => {
           unit="average"
           color="from-emerald-500 to-green-600"
           bgColor="bg-emerald-500/10"
-          insight="Your writing is becoming more expressive"
+          insight={analytics.avgWordsPerEntry > 0 ? "Based on recent entries" : "No recent entries"}
         />
         
         <EnhancedStatCard
@@ -214,7 +275,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ className = '' }) => {
         />
       </div>
 
-      {/* Enhanced Activity Chart */}
+      {/* REAL DATA ONLY: Enhanced Activity Chart */}
       <div className="bg-gradient-to-br from-slate-800/40 to-slate-700/40 backdrop-blur-sm rounded-2xl p-6 border border-violet-500/20 shadow-xl">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-xl font-bold text-violet-300 flex items-center space-x-2">
@@ -280,7 +341,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ className = '' }) => {
         </ResponsiveContainer>
       </div>
 
-      {/* AI Insights Section */}
+      {/* AI Insights Section - REAL DATA ONLY */}
       <div className="bg-gradient-to-br from-slate-800/40 to-slate-700/40 backdrop-blur-sm rounded-2xl p-6 border border-cyan-500/20 shadow-xl">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-xl font-bold text-cyan-300 flex items-center space-x-2">
@@ -320,7 +381,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ className = '' }) => {
         {renderInsightTab()}
       </div>
 
-      {/* Personal Growth Radar Chart */}
+      {/* REAL DATA ONLY: Personal Growth Radar Chart */}
       <div className="bg-gradient-to-br from-slate-800/40 to-slate-700/40 backdrop-blur-sm rounded-2xl p-6 border border-emerald-500/20 shadow-xl">
         <h3 className="text-xl font-bold text-emerald-300 mb-6 flex items-center space-x-2">
           <Sparkles className="w-6 h-6" />
@@ -358,25 +419,25 @@ export const Analytics: React.FC<AnalyticsProps> = ({ className = '' }) => {
               { 
                 name: 'Emotional Intelligence', 
                 value: analytics.personalGrowthMetrics.emotionalIntelligence, 
-                description: 'Ability to understand and express emotions',
+                description: 'Based on emotional expression in writing',
                 color: 'emerald'
               },
               { 
                 name: 'Self Awareness', 
                 value: analytics.personalGrowthMetrics.selfAwareness, 
-                description: 'Recognition of thoughts and patterns',
+                description: 'Calculated from self-reflection patterns',
                 color: 'blue'
               },
               { 
                 name: 'Resilience', 
                 value: analytics.personalGrowthMetrics.resilience, 
-                description: 'Ability to bounce back from challenges',
+                description: 'Derived from mood stability',
                 color: 'purple'
               },
               { 
                 name: 'Expressiveness', 
                 value: analytics.personalGrowthMetrics.expressiveness, 
-                description: 'Clarity and depth of communication',
+                description: 'Based on writing depth and frequency',
                 color: 'amber'
               }
             ].map((metric, index) => (
@@ -386,7 +447,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ className = '' }) => {
         </div>
       </div>
 
-      {/* Enhanced Mood Distribution */}
+      {/* REAL DATA ONLY: Enhanced Mood Distribution */}
       {moodDistribution.length > 0 && (
         <div className="bg-gradient-to-br from-slate-800/40 to-slate-700/40 backdrop-blur-sm rounded-2xl p-6 border border-rose-500/20 shadow-xl">
           <h3 className="text-xl font-bold text-rose-300 mb-6 flex items-center space-x-2">
@@ -450,7 +511,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ className = '' }) => {
         </div>
       )}
 
-      {/* Writing Patterns & Achievements */}
+      {/* REAL DATA ONLY: Writing Patterns & Achievements */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <EnhancedWritingPatterns patterns={analytics.writingTimePatterns} />
         <EnhancedAchievements analytics={analytics} />
@@ -459,107 +520,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ className = '' }) => {
   );
 };
 
-// Enhanced Components
-interface EnhancedStatCardProps {
-  icon: React.ReactNode;
-  title: string;
-  value: string | number;
-  unit: string;
-  color: string;
-  bgColor: string;
-  change?: string;
-  trend?: 'up' | 'down' | 'stable';
-  insight?: string;
-}
-
-const EnhancedStatCard: React.FC<EnhancedStatCardProps> = ({ 
-  icon, title, value, unit, color, bgColor, change, trend, insight 
-}) => (
-  <div className={`${bgColor} rounded-2xl p-6 border border-violet-500/20 shadow-lg hover:shadow-xl transition-all duration-300 group hover:scale-105`}>
-    <div className="flex items-center justify-between mb-4">
-      <div className={`p-3 bg-gradient-to-br ${color} rounded-xl text-white shadow-lg group-hover:shadow-xl transition-shadow duration-300`}>
-        {icon}
-      </div>
-      {change && (
-        <div className={`flex items-center space-x-1 px-2 py-1 rounded-lg ${
-          trend === 'up' ? 'bg-green-500/20 text-green-400' :
-          trend === 'down' ? 'bg-red-500/20 text-red-400' :
-          'bg-gray-500/20 text-gray-400'
-        }`}>
-          {trend === 'up' && <ArrowUp className="w-3 h-3" />}
-          {trend === 'down' && <ArrowDown className="w-3 h-3" />}
-          <span className="text-xs font-medium">{change}</span>
-        </div>
-      )}
-    </div>
-    <div className="space-y-2">
-      <p className="text-3xl font-bold text-gray-100 group-hover:text-white transition-colors duration-300">{value}</p>
-      <p className="text-sm text-gray-400 group-hover:text-gray-300 transition-colors duration-300">{unit}</p>
-      <p className="text-xs text-gray-500 font-medium">{title}</p>
-      {insight && (
-        <p className="text-xs text-gray-400 italic bg-slate-700/30 px-2 py-1 rounded">
-          {insight}
-        </p>
-      )}
-    </div>
-  </div>
-);
-
-const generateAdvancedAnalytics = async (_journalEntries: JournalEntry[], _moodEntries: MoodEntry[]): Promise<AdvancedAnalytics> => {
-  // This would use real AI analysis in production
-  return {
-    moodPredictions: [
-      {
-        type: 'mood',
-        prediction: 'Your mood is likely to improve over the next week based on your writing patterns',
-        confidence: 0.75,
-        timeframe: 'Next 7 days',
-        factors: ['Increased self-reflection', 'Positive writing tone', 'Consistent journaling'],
-        date: new Date().toISOString()
-      }
-    ],
-    correlations: [
-      {
-        factor: 'Writing frequency',
-        correlation: 0.68,
-        description: 'Higher writing frequency correlates with improved mood stability',
-        significance: 'high'
-      }
-    ],
-    seasonalPatterns: [
-      {
-        season: 'current',
-        moodAverage: 3.8,
-        patterns: ['More reflective during evenings', 'Higher energy in mornings'],
-        recommendations: ['Consider morning journaling for better mood']
-      }
-    ],
-    personalityInsights: [
-      {
-        trait: 'Introspective',
-        strength: 0.85,
-        description: 'You show strong self-reflection abilities in your writing'
-      },
-      {
-        trait: 'Optimistic',
-        strength: 0.72,
-        description: 'Your entries often end on positive or hopeful notes'
-      }
-    ],
-    recommendations: [
-      'Try writing at consistent times for better habit formation',
-      'Explore gratitude journaling to enhance positive mood patterns',
-      'Consider tracking specific activities that correlate with better moods'
-    ],
-    personalGrowthMetrics: {
-      emotionalIntelligence: 0.75,
-      selfAwareness: 0.82,
-      resilience: 0.68,
-      expressiveness: 0.71
-    }
-  };
-};
-
+// REAL DATA ONLY: All helper functions use actual data
 const calculateJournalStreak = (entries: JournalEntry[]): number => {
   if (entries.length === 0) return 0;
   
@@ -645,17 +606,8 @@ const getWritingTimePatterns = (entries: JournalEntry[]) => {
     .sort((a, b) => b.count - a.count);
 };
 
-const getEmotionalJourney = (journalEntries: JournalEntry[], _moodEntries: MoodEntry[]) => {
-  return journalEntries.slice(0, 10).map(entry => ({
-    date: entry.date,
-    dominantEmotion: 'calm', // Would be extracted from AI analysis
-    intensity: 0.7,
-    context: entry.content.substring(0, 50) + '...'
-  }));
-};
-
 const calculatePersonalGrowthMetrics = (journalEntries: JournalEntry[], moodEntries: MoodEntry[]) => {
-  // Enhanced calculation based on writing patterns, emotional stability, etc.
+  // REAL DATA ONLY: Calculate based on actual writing patterns and mood stability
   const avgWordCount = journalEntries.length > 0 
     ? journalEntries.reduce((sum, entry) => sum + entry.content.split(' ').length, 0) / journalEntries.length
     : 0;
@@ -675,14 +627,14 @@ const calculatePersonalGrowthMetrics = (journalEntries: JournalEntry[], moodEntr
   };
 };
 
-// Additional enhanced components for the insight tabs
-const OverviewInsights: React.FC<{ analytics: any; trendAnalysis: TrendAnalysis | null }> = ({ trendAnalysis }) => (
+// REAL DATA ONLY: Enhanced components for the insight tabs
+const OverviewInsights: React.FC<{ analytics: any; trendAnalysis: TrendAnalysis | null }> = ({ analytics, trendAnalysis }) => (
   <div className="space-y-4">
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <InsightCard
         icon={<Lightbulb className="w-5 h-5" />}
         title="Key Insight"
-        content="Your journaling consistency has improved your emotional awareness by 23% this month."
+        content={`You've maintained a ${analytics.journalStreak}-day journaling streak with ${analytics.avgWordsPerEntry} words per entry on average.`}
         color="amber"
       />
       <InsightCard
@@ -695,9 +647,9 @@ const OverviewInsights: React.FC<{ analytics: any; trendAnalysis: TrendAnalysis 
   </div>
 );
 
-const TrendsInsights: React.FC<{ trendAnalysis: TrendAnalysis | null; analytics: any }> = ({ trendAnalysis }) => (
+const TrendsInsights: React.FC<{ trendAnalysis: TrendAnalysis | null; analytics: any }> = ({ trendAnalysis, analytics }) => (
   <div className="space-y-4">
-    {trendAnalysis && (
+    {trendAnalysis ? (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <TrendCard
           title="Mood Trend"
@@ -710,32 +662,109 @@ const TrendsInsights: React.FC<{ trendAnalysis: TrendAnalysis | null; analytics:
           description="Compared to last month"
         />
         <TrendCard
-          title="Emotional Patterns"
-          trend="stable"
-          description="Consistent emotional awareness"
+          title="Writing Consistency"
+          trend={analytics.journalStreak > 7 ? "improving" : analytics.journalStreak > 0 ? "stable" : "declining"}
+          description={`${analytics.journalStreak} day streak`}
         />
+      </div>
+    ) : (
+      <div className="text-center p-8">
+        <p className="text-gray-400">AI trend analysis not available</p>
       </div>
     )}
   </div>
 );
 
-const PredictiveInsights: React.FC<{ advancedAnalytics: AdvancedAnalytics | null }> = ({ advancedAnalytics }) => (
+const PredictiveInsights: React.FC<{ trendAnalysis: TrendAnalysis | null }> = ({ trendAnalysis }) => (
   <div className="space-y-4">
-    {advancedAnalytics?.moodPredictions.map((prediction, index) => (
-      <PredictionCard key={index} prediction={prediction} />
-    ))}
+    {trendAnalysis ? (
+      <div className="grid grid-cols-1 gap-4">
+        {trendAnalysis.recommendations.map((recommendation, index) => (
+          <div key={index} className="p-4 bg-purple-500/10 border border-purple-500/20 rounded-xl">
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-semibold text-purple-400">Recommendation</span>
+              <span className="text-xs text-gray-400">Based on patterns</span>
+            </div>
+            <p className="text-gray-300 text-sm">{recommendation}</p>
+          </div>
+        ))}
+      </div>
+    ) : (
+      <div className="text-center p-8">
+        <p className="text-gray-400">AI predictions not available</p>
+      </div>
+    )}
   </div>
 );
 
-const CorrelationInsights: React.FC<{ advancedAnalytics: AdvancedAnalytics | null }> = ({ advancedAnalytics }) => (
+const CorrelationInsights: React.FC<{ trendAnalysis: TrendAnalysis | null }> = ({ trendAnalysis }) => (
   <div className="space-y-4">
-    {advancedAnalytics?.correlations.map((correlation, index) => (
-      <CorrelationCard key={index} correlation={correlation} />
-    ))}
+    {trendAnalysis?.emotionalPatterns && trendAnalysis.emotionalPatterns.length > 0 ? (
+      <div className="grid grid-cols-1 gap-4">
+        {trendAnalysis.emotionalPatterns.map((pattern, index) => (
+          <div key={index} className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl">
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-semibold text-blue-400">Pattern Detected</span>
+              <span className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-400">High</span>
+            </div>
+            <p className="text-gray-300 text-sm">{pattern}</p>
+          </div>
+        ))}
+      </div>
+    ) : (
+      <div className="text-center p-8">
+        <p className="text-gray-400">AI correlation analysis not available</p>
+      </div>
+    )}
   </div>
 );
 
-// Supporting components
+// Supporting components remain the same but are used only with real data
+interface EnhancedStatCardProps {
+  icon: React.ReactNode;
+  title: string;
+  value: string | number;
+  unit: string;
+  color: string;
+  bgColor: string;
+  change?: string;
+  trend?: 'up' | 'down' | 'stable';
+  insight?: string;
+}
+
+const EnhancedStatCard: React.FC<EnhancedStatCardProps> = ({ 
+  icon, title, value, unit, color, bgColor, change, trend, insight 
+}) => (
+  <div className={`${bgColor} rounded-2xl p-6 border border-violet-500/20 shadow-lg hover:shadow-xl transition-all duration-300 group hover:scale-105`}>
+    <div className="flex items-center justify-between mb-4">
+      <div className={`p-3 bg-gradient-to-br ${color} rounded-xl text-white shadow-lg group-hover:shadow-xl transition-shadow duration-300`}>
+        {icon}
+      </div>
+      {change && (
+        <div className={`flex items-center space-x-1 px-2 py-1 rounded-lg ${
+          trend === 'up' ? 'bg-green-500/20 text-green-400' :
+          trend === 'down' ? 'bg-red-500/20 text-red-400' :
+          'bg-gray-500/20 text-gray-400'
+        }`}>
+          {trend === 'up' && <ArrowUp className="w-3 h-3" />}
+          {trend === 'down' && <ArrowDown className="w-3 h-3" />}
+          <span className="text-xs font-medium">{change}</span>
+        </div>
+      )}
+    </div>
+    <div className="space-y-2">
+      <p className="text-3xl font-bold text-gray-100 group-hover:text-white transition-colors duration-300">{value}</p>
+      <p className="text-sm text-gray-400 group-hover:text-gray-300 transition-colors duration-300">{unit}</p>
+      <p className="text-xs text-gray-500 font-medium">{title}</p>
+      {insight && (
+        <p className="text-xs text-gray-400 italic bg-slate-700/30 px-2 py-1 rounded">
+          {insight}
+        </p>
+      )}
+    </div>
+  </div>
+);
+
 const InsightCard: React.FC<{ icon: React.ReactNode; title: string; content: string; color: string }> = ({ icon, title, content, color }) => (
   <div className={`p-4 bg-${color}-500/10 border border-${color}-500/20 rounded-xl`}>
     <div className={`flex items-center space-x-2 text-${color}-400 mb-2`}>
@@ -751,36 +780,6 @@ const TrendCard: React.FC<{ title: string; trend: string; description: string }>
     <h4 className="font-semibold text-gray-200 mb-1">{title}</h4>
     <p className="text-lg font-bold text-cyan-400 capitalize mb-1">{trend}</p>
     <p className="text-xs text-gray-400">{description}</p>
-  </div>
-);
-
-const PredictionCard: React.FC<{ prediction: PredictiveInsight }> = ({ prediction }) => (
-  <div className="p-4 bg-purple-500/10 border border-purple-500/20 rounded-xl">
-    <div className="flex items-center justify-between mb-2">
-      <span className="font-semibold text-purple-400">{prediction.type.toUpperCase()} Prediction</span>
-      <span className="text-xs text-gray-400">{Math.round(prediction.confidence * 100)}% confidence</span>
-    </div>
-    <p className="text-gray-300 text-sm mb-2">{prediction.prediction}</p>
-    <p className="text-xs text-gray-500">{prediction.timeframe}</p>
-  </div>
-);
-
-const CorrelationCard: React.FC<{ correlation: CorrelationInsight }> = ({ correlation }) => (
-  <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl">
-    <div className="flex items-center justify-between mb-2">
-      <span className="font-semibold text-blue-400">{correlation.factor}</span>
-      <span className={`text-xs px-2 py-1 rounded ${
-        correlation.significance === 'high' ? 'bg-green-500/20 text-green-400' :
-        correlation.significance === 'medium' ? 'bg-yellow-500/20 text-yellow-400' :
-        'bg-gray-500/20 text-gray-400'
-      }`}>
-        {correlation.significance}
-      </span>
-    </div>
-    <p className="text-gray-300 text-sm">{correlation.description}</p>
-    <div className="mt-2 text-xs text-gray-500">
-      Correlation: {Math.round(correlation.correlation * 100)}%
-    </div>
   </div>
 );
 
@@ -807,18 +806,22 @@ const EnhancedWritingPatterns: React.FC<{ patterns: any[] }> = ({ patterns }) =>
       <span>Writing Patterns</span>
     </h3>
     <div className="space-y-4">
-      {patterns.map((pattern, index) => (
-        <div key={index} className="flex items-center justify-between p-4 bg-violet-500/10 rounded-xl border border-violet-500/20 hover:border-violet-500/40 transition-colors duration-200">
-          <div className="flex items-center space-x-3">
-            <div className="w-4 h-4 bg-violet-400 rounded-full shadow-lg" />
-            <span className="text-gray-200 font-medium">{pattern.period}</span>
+      {patterns.length > 0 ? (
+        patterns.map((pattern, index) => (
+          <div key={index} className="flex items-center justify-between p-4 bg-violet-500/10 rounded-xl border border-violet-500/20 hover:border-violet-500/40 transition-colors duration-200">
+            <div className="flex items-center space-x-3">
+              <div className="w-4 h-4 bg-violet-400 rounded-full shadow-lg" />
+              <span className="text-gray-200 font-medium">{pattern.period}</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="text-violet-300 font-bold text-lg">{pattern.count}</span>
+              <span className="text-gray-400 text-sm">entries</span>
+            </div>
           </div>
-          <div className="flex items-center space-x-2">
-            <span className="text-violet-300 font-bold text-lg">{pattern.count}</span>
-            <span className="text-gray-400 text-sm">entries</span>
-          </div>
-        </div>
-      ))}
+        ))
+      ) : (
+        <p className="text-gray-400 text-center py-4">No writing patterns available yet</p>
+      )}
     </div>
   </div>
 );

@@ -1,14 +1,16 @@
 import React, { useState, useRef } from 'react';
-import { Settings, Download, Upload, Trash2, Shield, Moon, Sun, Bell, Database, AlertTriangle, CheckCircle, RefreshCw } from 'lucide-react';
+import { Settings, Download, Upload, Trash2, Shield, Moon, Sun, Bell, Database, AlertTriangle, CheckCircle, RefreshCw, FileText } from 'lucide-react';
 import { useAppStore } from '../stores';
 import { useNotificationHelpers } from './NotificationSystem';
+import { ImportJournalFiles } from './ImportJournalFiles';
+import { AutoImportJournalFiles } from './AutoImportJournalFiles';
 
 export const SettingsTab: React.FC = () => {
   const { 
     journalEntries, 
     moodEntries, 
     clearAllData, 
-    exportAllData, 
+    exportData, 
     importData,
     settings,
     updateSettings 
@@ -18,13 +20,15 @@ export const SettingsTab: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showJournalImport, setShowJournalImport] = useState(true); // Changed to true to show by default
+  const [importMode, setImportMode] = useState<'auto' | 'manual'>('auto');
 
   const handleExport = async () => {
     if (isExporting) return;
     
     setIsExporting(true);
     try {
-      await exportAllData();
+      await exportData();
       success('Data exported successfully!', 'Your journal and mood data has been downloaded');
     } catch (err) {
       console.error('Export failed:', err);
@@ -41,8 +45,7 @@ export const SettingsTab: React.FC = () => {
     setIsImporting(true);
     try {
       const text = await file.text();
-      const data = JSON.parse(text);
-      await importData(data);
+      await importData(text);
       success('Data imported successfully!', 'Your journal and mood data has been restored');
     } catch (err) {
       console.error('Import failed:', err);
@@ -193,7 +196,7 @@ export const SettingsTab: React.FC = () => {
       </div>
 
       {/* Data Management */}
-      <div className="card p-8">
+      <div className="glass-card p-8">
         <div className="flex items-center space-x-3 mb-6">
           <div className="p-2 bg-green-500/20 rounded-xl">
             <Database className="w-6 h-6 text-green-400" />
@@ -206,62 +209,129 @@ export const SettingsTab: React.FC = () => {
 
         {/* Data Statistics */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <div className="bg-primary-500/10 rounded-xl p-4 border border-primary-500/20">
-            <div className="text-2xl font-bold text-primary-200">{dataStats.journalEntries}</div>
+          <div className="bg-purple-500/10 rounded-xl p-4 border border-purple-500/20">
+            <div className="text-2xl font-bold text-purple-200">{dataStats.journalEntries}</div>
             <div className="text-sm text-gray-400">Journal Entries</div>
           </div>
-          <div className="bg-secondary-500/10 rounded-xl p-4 border border-secondary-500/20">
-            <div className="text-2xl font-bold text-secondary-200">{dataStats.moodEntries}</div>
+          <div className="bg-blue-500/10 rounded-xl p-4 border border-blue-500/20">
+            <div className="text-2xl font-bold text-blue-200">{dataStats.moodEntries}</div>
             <div className="text-sm text-gray-400">Mood Entries</div>
           </div>
           <div className="bg-green-500/10 rounded-xl p-4 border border-green-500/20">
             <div className="text-2xl font-bold text-green-200">{dataStats.totalEntries}</div>
             <div className="text-sm text-gray-400">Total Entries</div>
           </div>
-          <div className="bg-blue-500/10 rounded-xl p-4 border border-blue-500/20">
-            <div className="text-2xl font-bold text-blue-200">{dataStats.dataSize} KB</div>
+          <div className="bg-cyan-500/10 rounded-xl p-4 border border-cyan-500/20">
+            <div className="text-2xl font-bold text-cyan-200">{dataStats.dataSize} KB</div>
             <div className="text-sm text-gray-400">Data Size</div>
           </div>
         </div>
 
-        {/* Data Actions */}
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <button
-              onClick={handleExport}
-              disabled={isExporting || dataStats.totalEntries === 0}
-              className="flex items-center justify-center space-x-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-1"
-            >
-              {isExporting ? (
-                <RefreshCw className="w-5 h-5 animate-spin" />
-              ) : (
-                <Download className="w-5 h-5" />
-              )}
-              <span>{isExporting ? 'Exporting...' : 'Export Data'}</span>
-            </button>
-
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isImporting}
-              className="flex items-center justify-center space-x-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-1"
-            >
-              {isImporting ? (
-                <RefreshCw className="w-5 h-5 animate-spin" />
-              ) : (
-                <Upload className="w-5 h-5" />
-              )}
-              <span>{isImporting ? 'Importing...' : 'Import Data'}</span>
-            </button>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".json"
-              onChange={handleImport}
-              className="hidden"
-            />
+        {/* Import/Export Actions */}
+        <div className="space-y-6">
+          {/* Journal Import Section */}
+          <div className="border border-blue-500/20 rounded-xl p-6 bg-gradient-to-r from-blue-500/5 to-purple-500/5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-3">
+                <FileText className="w-5 h-5 text-blue-400" />
+                <div>
+                  <h4 className="font-semibold text-blue-300">Import Journal Files</h4>
+                  <p className="text-sm text-gray-400">Import journal entries from Auto Call app or other sources</p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-3">
+                {/* Import Mode Toggle */}
+                <div className="flex items-center space-x-2 bg-slate-700/30 rounded-lg p-1">
+                  <button
+                    onClick={() => setImportMode('auto')}
+                    className={`px-3 py-1 rounded text-sm transition-colors ${
+                      importMode === 'auto' 
+                        ? 'bg-blue-600 text-white' 
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Auto Import
+                  </button>
+                  <button
+                    onClick={() => setImportMode('manual')}
+                    className={`px-3 py-1 rounded text-sm transition-colors ${
+                      importMode === 'manual' 
+                        ? 'bg-blue-600 text-white' 
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Manual
+                  </button>
+                </div>
+                
+                <button
+                  onClick={() => setShowJournalImport(!showJournalImport)}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                >
+                  {showJournalImport ? 'Hide Import' : 'Show Import'}
+                </button>
+              </div>
+            </div>
+            
+            {showJournalImport && (
+              <div className="mt-4">
+                {importMode === 'auto' ? (
+                  <AutoImportJournalFiles />
+                ) : (
+                  <ImportJournalFiles />
+                )}
+              </div>
+            )}
           </div>
 
+          {/* Standard Import/Export */}
+          <div className="space-y-4">
+            <h4 className="font-semibold text-white">App Data Backup & Restore</h4>
+            <div className="flex flex-col sm:flex-row gap-4">
+              <button
+                onClick={handleExport}
+                disabled={isExporting || dataStats.totalEntries === 0}
+                className="flex items-center justify-center space-x-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-1"
+              >
+                {isExporting ? (
+                  <RefreshCw className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Download className="w-5 h-5" />
+                )}
+                <span>{isExporting ? 'Exporting...' : 'Export App Data'}</span>
+              </button>
+
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isImporting}
+                className="flex items-center justify-center space-x-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-1"
+              >
+                {isImporting ? (
+                  <RefreshCw className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Upload className="w-5 h-5" />
+                )}
+                <span>{isImporting ? 'Importing...' : 'Import App Data'}</span>
+              </button>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json"
+                onChange={handleImport}
+                className="hidden"
+              />
+            </div>
+            
+            <div className="text-xs text-gray-500 space-y-1">
+              <p>• <strong>Auto Import:</strong> Continuously monitors your Auto Call directory for new journal files</p>
+              <p>• <strong>Manual Import:</strong> Upload individual journal files from any location</p>
+              <p>• <strong>Export App Data:</strong> Downloads your complete Inner Guide AI database</p>
+              <p>• <strong>Import App Data:</strong> Restores a complete Inner Guide AI backup</p>
+            </div>
+          </div>
+
+          {/* Danger Zone */}
           <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
             <div className="flex items-start space-x-3">
               <AlertTriangle className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" />
