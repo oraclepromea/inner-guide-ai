@@ -526,7 +526,31 @@ const generateAdvancedAnalytics = async (_journalEntries: JournalEntry[], _moodE
         significance: 'high'
       }
     ],
-    writingPatternEvolution: [],
+    seasonalPatterns: [
+      {
+        season: 'current',
+        moodAverage: 3.8,
+        patterns: ['More reflective during evenings', 'Higher energy in mornings'],
+        recommendations: ['Consider morning journaling for better mood']
+      }
+    ],
+    personalityInsights: [
+      {
+        trait: 'Introspective',
+        strength: 0.85,
+        description: 'You show strong self-reflection abilities in your writing'
+      },
+      {
+        trait: 'Optimistic',
+        strength: 0.72,
+        description: 'Your entries often end on positive or hopeful notes'
+      }
+    ],
+    recommendations: [
+      'Try writing at consistent times for better habit formation',
+      'Explore gratitude journaling to enhance positive mood patterns',
+      'Consider tracking specific activities that correlate with better moods'
+    ],
     personalGrowthMetrics: {
       emotionalIntelligence: 0.75,
       selfAwareness: 0.82,

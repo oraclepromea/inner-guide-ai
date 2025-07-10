@@ -1,4 +1,6 @@
 // Core data types
+export type TabType = 'journal' | 'mood' | 'analytics' | 'settings';
+
 export interface JournalEntry {
   id?: number;
   date: string;
@@ -131,6 +133,12 @@ export interface AdvancedAnalytics {
   seasonalPatterns: any[];
   personalityInsights: any[];
   recommendations: string[];
+  personalGrowthMetrics: {
+    emotionalIntelligence: number;
+    selfAwareness: number;
+    resilience: number;
+    expressiveness: number;
+  };
 }
 
 export interface PredictiveInsight {

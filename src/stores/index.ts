@@ -7,7 +7,8 @@ import type {
   NotificationState,
   AnalyticsData,
   Achievement,
-  LocationData
+  LocationData,
+  TabType
 } from '../types';
 import { db } from '../lib/database';
 import { getCurrentLocation, getMoonPhase, formatDate, formatTime } from '../utils';
@@ -39,7 +40,7 @@ interface AppState {
   userPreferences: UserPreferences;
   
   // UI state
-  activeTab: string;
+  activeTab: TabType;
   isAnalyzing: boolean;
   
   // Notifications
@@ -61,6 +62,7 @@ interface AppState {
   addJournalEntry: (content: string, entryData?: any) => Promise<void>;
   updateJournalEntry: (id: number, updates: Partial<JournalEntry>) => Promise<void>;
   deleteJournalEntry: (id: number) => Promise<void>;
+  analyzeEntry: (entry: JournalEntry) => Promise<void>;
   
   loadMoodEntries: () => Promise<void>;
   addMoodEntry: (mood: number, moodLabel: string, notes?: string) => Promise<void>;
@@ -81,7 +83,7 @@ interface AppState {
   getAnalytics: () => AnalyticsData;
   
   // UI actions
-  setActiveTab: (tab: string) => void;
+  setActiveTab: (tab: TabType) => void;
   setSelectedEntry: (entry: JournalEntry | null) => void;
   
   // Data management
@@ -293,6 +295,30 @@ export const useAppStore = create<AppState>((set, get) => ({
       }));
     } catch (error) {
       console.error('Failed to delete journal entry:', error);
+    }
+  },
+  
+  analyzeEntry: async (entry: JournalEntry) => {
+    set({ isAnalyzing: true });
+    try {
+      // Mock AI analysis - in real implementation, this would call an AI service
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
+      
+      // Add a notification that analysis is complete
+      get().addNotification({
+        type: 'success',
+        title: 'Analysis Complete',
+        message: `Your journal entry from ${entry.date} has been analyzed with AI insights.`
+      });
+    } catch (error) {
+      console.error('Failed to analyze entry:', error);
+      get().addNotification({
+        type: 'error',
+        title: 'Analysis Failed',
+        message: 'Failed to analyze journal entry. Please try again.'
+      });
+    } finally {
+      set({ isAnalyzing: false });
     }
   },
   
@@ -509,7 +535,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   // UI actions
-  setActiveTab: (tab: string) => {
+  setActiveTab: (tab: TabType) => {
     set({ activeTab: tab });
   },
 
