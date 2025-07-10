@@ -1,5 +1,5 @@
 import React from 'react';
-import { BookOpen, Heart, BarChart3, Settings } from 'lucide-react';
+import { BookOpen, Heart, BarChart3, Settings, MessageCircle } from 'lucide-react';
 import { useAppStore } from '../stores';
 import type { TabType } from '../types';
 
@@ -9,7 +9,7 @@ interface TabNavigationProps {
 }
 
 export const TabNavigation: React.FC<TabNavigationProps> = ({ activeTab, onTabChange }) => {
-  const { journalEntries, moodEntries } = useAppStore();
+  const { journalEntries, moodEntries, therapySessions } = useAppStore();
 
   const tabs = [
     {
@@ -25,6 +25,13 @@ export const TabNavigation: React.FC<TabNavigationProps> = ({ activeTab, onTabCh
       icon: Heart,
       count: moodEntries.length,
       gradient: 'from-pink-500 to-rose-500',
+    },
+    {
+      id: 'therapy' as TabType,
+      label: 'Therapy',
+      icon: MessageCircle,
+      count: therapySessions?.length || 0,
+      gradient: 'from-emerald-500 to-teal-500',
     },
     {
       id: 'analytics' as TabType,

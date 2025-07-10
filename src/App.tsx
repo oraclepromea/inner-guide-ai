@@ -1,9 +1,9 @@
-import { useEffect } from 'react';
 import { useAppStore } from './stores';
 import { JournalTab } from './components/JournalTab.tsx';
 import { MoodTab } from './components/MoodTab.tsx';
 import { Analytics } from './components/Analytics.tsx';
 import { SettingsTab } from './components/SettingsTab.tsx';
+import TherapyTab from './components/TherapyTab.tsx';
 import { Header } from './components/Header.tsx';
 import { TabNavigation } from './components/TabNavigation.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
@@ -11,12 +11,7 @@ import { NotificationProvider } from './components/NotificationSystem';
 import './App.css';
 
 function App() {
-  const { activeTab, setActiveTab, loadJournalEntries, loadMoodEntries } = useAppStore();
-
-  useEffect(() => {
-    loadJournalEntries();
-    loadMoodEntries();
-  }, [loadJournalEntries, loadMoodEntries]);
+  const { activeTab, setActiveTab } = useAppStore();
 
   const renderActiveTab = () => {
     switch (activeTab) {
@@ -26,6 +21,8 @@ function App() {
         return <MoodTab />;
       case 'analytics':
         return <Analytics />;
+      case 'therapy':
+        return <TherapyTab />;
       case 'settings':
         return <SettingsTab />;
       default:

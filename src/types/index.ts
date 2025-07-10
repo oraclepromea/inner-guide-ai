@@ -1,42 +1,57 @@
 // Core data types
-export type TabType = 'journal' | 'mood' | 'analytics' | 'settings';
+export type TabType = 'journal' | 'mood' | 'analytics' | 'therapy' | 'settings';
 
+// Therapy-related types
+export type TherapistPersonality = 'empathetic' | 'analytical' | 'supportive' | 'direct';
+export type NotificationLevel = 'info' | 'success' | 'warning' | 'error';
+
+// Error handling types
+export interface AppError {
+  code: string;
+  message: string;
+  details?: any;
+  timestamp: string;
+}
+
+// Journal and Mood Entry types
 export interface JournalEntry {
-  id?: number;
-  date: string;
-  time: string;
+  id?: string | number;
+  title: string;
   content: string;
-  mood?: number;
-  tags?: string[];
+  date: string;
+  time?: string;
+  mood: number;
+  tags: string[];
   location?: LocationData;
-  moonPhase?: MoonPhaseData;
+  moonPhase?: string;
+  weather?: {
+    temperature: number;
+    condition: string;
+    description: string;
+  };
+  aiInsights?: AIAnalysisResult;
   createdAt: string;
   updatedAt: string;
-  wordCount?: number;
-  readingTime?: number;
-  attachments?: Attachment[];
-  sentiment?: SentimentAnalysis;
-  aiInsights?: EnhancedAIInsights;
 }
 
 export interface MoodEntry {
-  id?: number;
+  id?: string | number;
   date: string;
   mood: number;
-  moodLabel: string;
   notes?: string;
+  factors?: string[];
+  energy?: number;
+  sleep?: number;
+  stress?: number;
+  anxiety?: number;
   createdAt: string;
   updatedAt: string;
-  factors?: MoodFactor[];
-  activities?: string[];
-  weather?: WeatherData;
 }
 
 // Location and Moon Phase types
 export interface LocationData {
   city: string;
   country: string;
-  flag: string;
   coordinates?: {
     lat: number;
     lng: number;
@@ -288,7 +303,7 @@ export interface Achievement {
 
 // UI State types
 export interface TabState {
-  activeTab: 'journal' | 'mood' | 'analytics' | 'settings';
+  activeTab: 'journal' | 'mood' | 'analytics' | 'therapy' | 'settings';
   journalView: 'list' | 'calendar' | 'timeline';
   moodView: 'chart' | 'calendar' | 'stats';
   analyticsView: 'overview' | 'trends' | 'insights';
@@ -363,22 +378,6 @@ export interface VirtualizedListProps {
   containerHeight: number;
   renderItem: (item: any, index: number) => React.ReactNode;
   overscan?: number;
-}
-
-// Error handling
-export interface AppError {
-  code: string;
-  message: string;
-  details?: any;
-  timestamp: string;
-  userAction?: string;
-}
-
-export interface ErrorBoundaryState {
-  hasError: boolean;
-  error?: Error;
-  errorInfo?: React.ErrorInfo;
-  errorId: string;
 }
 
 // Component state types
@@ -480,4 +479,189 @@ export interface UseSearchResult<T> {
   setQuery: (query: string) => void;
   filteredItems: T[];
   isSearching: boolean;
+}
+
+// Therapy types
+export interface TherapySession {
+  id?: string | number;
+  date: string;
+  messages: TherapyMessage[];
+  exercises: TherapyExercise[];
+  summary?: string;
+  mood?: number;
+  tags?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TherapyExercise {
+  id?: string | number;
+  title: string;
+  description: string;
+  type: 'breathing' | 'mindfulness' | 'cognitive' | 'reflection';
+  duration?: number;
+  completed: boolean;
+  completedAt?: string;
+  userResponse?: string;
+}
+
+export interface TherapyMessage {
+  id?: string | number;
+  content: string;
+  sender: 'user' | 'therapist';
+  timestamp: string;
+  type?: 'text' | 'exercise' | 'insight';
+}
+
+export interface TherapyGoal {
+  id?: number;
+  title: string;
+  description: string;
+  category: 'emotional' | 'behavioral' | 'cognitive' | 'relational' | 'lifestyle';
+  targetDate?: string;
+  progress: number; // 0-100
+  milestones: GoalMilestone[];
+  strategies: string[];
+  obstacles: string[];
+  createdAt: string;
+  updatedAt: string;
+  status: 'active' | 'completed' | 'paused';
+}
+
+export interface GoalMilestone {
+  id: string;
+  description: string;
+  completed: boolean;
+  completedAt?: string;
+  evidence?: string;
+}
+
+export interface PersonalGrowthProfile {
+  id?: number;
+  userId: string;
+  createdAt: string;
+  updatedAt: string;
+  emotionalPatterns: {
+    frequency: Record<string, number>;
+    weeklyVariation: Record<string, number[]>;
+    monthlyTrends: Record<string, number>;
+  };
+  recurringThemes: {
+    topics: string[];
+    positive: string[];
+    challenges: string[];
+    relationships: string[];
+    work: string[];
+    health: string[];
+  };
+  progressMetrics: {
+    resilience: number;
+    selfAwareness: number;
+    emotionalRange: number;
+    copingEffectiveness: number;
+    communicationSkills: number;
+    stressManagement: number;
+  };
+  conversationInsights: {
+    totalSessions: number;
+    averageSessionLength: number;
+    preferredTopics: string[];
+    mostHelpfulInterventions: string[];
+    growthAreas: string[];
+  };
+  goalTracking: {
+    activeGoals: TherapyGoal[];
+    completedGoals: TherapyGoal[];
+    goalAchievementRate: number;
+  };
+}
+
+// App state interface
+export interface AppState {
+  // Data
+  journalEntries: JournalEntry[];
+  moodEntries: MoodEntry[];
+  settings: AppSettings;
+  preferences: UserPreferences;
+  notifications: NotificationState[];
+  achievements: Achievement[];
+  
+  // UI State
+  activeTab: TabType;
+  isLoading: boolean;
+  error: string | null;
+  
+  // Location and Moon Phase
+  currentLocation: LocationData | null;
+  currentMoonPhase: MoonPhaseData | null;
+  
+  // Therapy State
+  therapySessions: TherapySession[];
+  currentSession: TherapySession | null;
+  messages: TherapyMessage[];
+  isLoadingTherapy: boolean;
+  isTyping: boolean;
+  selectedTherapist: TherapistPersonality;
+  
+  // Analytics State
+  analytics: AnalyticsData | null;
+
+  // Actions (these will be implemented in the store)
+  addJournalEntry: (entry: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  updateJournalEntry: (id: string, updates: Partial<JournalEntry>) => Promise<void>;
+  deleteJournalEntry: (id: string) => Promise<void>;
+  getJournalEntries: () => Promise<void>;
+  
+  addMoodEntry: (entry: Omit<MoodEntry, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  updateMoodEntry: (id: string, updates: Partial<MoodEntry>) => Promise<void>;
+  deleteMoodEntry: (id: string) => Promise<void>;
+  getMoodEntries: () => Promise<void>;
+  
+  updateSettings: (settings: Partial<AppSettings>) => Promise<void>;
+  updatePreferences: (preferences: Partial<UserPreferences>) => Promise<void>;
+  
+  addNotification: (notification: Omit<NotificationState, 'id' | 'timestamp' | 'read'>) => void;
+  removeNotification: (id: string) => void;
+  markNotificationRead: (id: string) => void;
+  clearNotifications: () => void;
+  
+  getAnalytics: () => Promise<AnalyticsData>;
+  generateAIInsights: (entry: JournalEntry) => Promise<void>;
+  
+  setActiveTab: (tab: TabType) => void;
+  setLoading: (loading: boolean) => void;
+  setError: (error: string | null) => void;
+  
+  updateLocation: (location: LocationData) => void;
+  updateMoonPhase: (moonPhase: MoonPhaseData) => void;
+  
+  createTherapySession: () => Promise<void>;
+  loadTherapySessions: () => Promise<void>;
+  loadSession: (sessionId: string) => Promise<void>;
+  sendMessage: (content: string) => Promise<void>;
+  archiveSession: (sessionId: string) => Promise<void>;
+  deleteSession: (sessionId: string) => Promise<void>;
+  updateTherapistPersonality: (personality: TherapistPersonality) => void;
+  
+  exportData: () => Promise<string>;
+  importData: (data: string) => Promise<void>;
+  clearAllData: () => Promise<void>;
+}
+
+export interface AIAnalysisResult {
+  sentiment: {
+    score: number;
+    label: 'positive' | 'negative' | 'neutral';
+    confidence: number;
+  };
+  themes: string[];
+  suggestions: string[];
+  reflectionPrompts: string[];
+}
+
+export interface ChatMessage {
+  id: string;
+  content: string;
+  role: 'user' | 'assistant';
+  timestamp: string;
 }

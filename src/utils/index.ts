@@ -1,5 +1,31 @@
 import type { ValidationResult, AppError, JournalEntry, MoodEntry } from '../types';
 
+// Performance utilities
+export const debounce = <T extends (...args: any[]) => any>(
+  func: T,
+  wait: number,
+  immediate?: boolean
+): ((...args: Parameters<T>) => void) => {
+  let timeout: number | null = null;
+  
+  return function executedFunction(...args: Parameters<T>) {
+    const later = () => {
+      timeout = null;
+      if (!immediate) func(...args);
+    };
+    
+    const callNow = immediate && !timeout;
+    
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    
+    timeout = setTimeout(later, wait);
+    
+    if (callNow) func(...args);
+  };
+};
+
 // Date formatting utilities
 export const formatDate = (date: string | Date): string => {
   const d = typeof date === 'string' ? new Date(date) : date;
@@ -330,95 +356,33 @@ export const getMoodColor = (mood: number): { bg: string; border: string; text: 
     4: { bg: 'bg-green-500/10', border: 'border-green-500/30', text: 'text-green-300' },
     5: { bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', text: 'text-emerald-300' }
   };
-  
   return colors[mood as keyof typeof colors] || colors[3];
 };
 
 export const getMoodEmoji = (mood: number): string => {
   const emojis = {
     1: '😢',
-    2: '😞',
+    2: '😔',
     3: '😐',
     4: '😊',
     5: '😄'
   };
-  
   return emojis[mood as keyof typeof emojis] || '😐';
 };
 
-// Simple debounce function
-export const debounce = <T extends (...args: any[]) => any>(
-  func: T,
-  wait: number
-): ((...args: Parameters<T>) => void) => {
-  let timeout: number | null = null;
-
-  return function executedFunction(...args: Parameters<T>) {
-    if (timeout) {
-      clearTimeout(timeout);
-    }
-    
-    timeout = window.setTimeout(() => {
-      func(...args);
-    }, wait);
+export const getMoodLabel = (mood: number): string => {
+  const labels = {
+    1: 'Very Sad',
+    2: 'Sad',
+    3: 'Neutral',
+    4: 'Happy',
+    5: 'Very Happy'
   };
-};
-
-// Throttle function for high-frequency events
-export const throttle = <T extends (...args: any[]) => any>(
-  func: T,
-  limit: number
-): ((...args: Parameters<T>) => void) => {
-  let inThrottle: boolean;
-  
-  return function executedFunction(...args: Parameters<T>) {
-    if (!inThrottle) {
-      func(...args);
-      inThrottle = true;
-      setTimeout(() => inThrottle = false, limit);
-    }
-  };
-};
-
-// Analytics utilities
-export const calculateTrend = (values: number[]): 'increasing' | 'decreasing' | 'stable' => {
-  if (values.length < 2) return 'stable';
-  
-  const first = values.slice(0, Math.floor(values.length / 2));
-  const second = values.slice(Math.floor(values.length / 2));
-  
-  const firstAvg = first.reduce((sum, val) => sum + val, 0) / first.length;
-  const secondAvg = second.reduce((sum, val) => sum + val, 0) / second.length;
-  
-  const difference = secondAvg - firstAvg;
-  const threshold = 0.1; // 10% threshold
-  
-  if (Math.abs(difference) < threshold) return 'stable';
-  return difference > 0 ? 'increasing' : 'decreasing';
-};
-
-export const calculateCorrelation = (x: number[], y: number[]): number => {
-  if (x.length !== y.length || x.length === 0) return 0;
-  
-  const n = x.length;
-  const sumX = x.reduce((sum, val) => sum + val, 0);
-  const sumY = y.reduce((sum, val) => sum + val, 0);
-  const sumXY = x.reduce((sum, val, i) => sum + val * y[i], 0);
-  const sumXX = x.reduce((sum, val) => sum + val * val, 0);
-  const sumYY = y.reduce((sum, val) => sum + val * val, 0);
-  
-  const numerator = n * sumXY - sumX * sumY;
-  const denominator = Math.sqrt((n * sumXX - sumX * sumX) * (n * sumYY - sumY * sumY));
-  
-  return denominator === 0 ? 0 : numerator / denominator;
+  return labels[mood as keyof typeof labels] || 'Neutral';
 };
 
 // Error handling utilities
-export const createAppError = (
-  code: string,
-  message: string,
-  details?: any
-): AppError => {
+export const createAppError = (code: string, message: string, details?: any): AppError => {
   return {
     code,
     message,
@@ -427,35 +391,80 @@ export const createAppError = (
   };
 };
 
-export const isAppError = (error: any): error is AppError => {
-  return error && typeof error === 'object' && 'code' in error && 'message' in error;
+export const handleAsyncError = <T>(
+  operation: () => Promise<T>,
+  errorMessage: string = 'Operation failed'
+): Promise<T | null> => {
+  return operation().catch((error) => {
+    console.error(errorMessage, error);
+    return null;
+  });
 };
 
-// Validation utilities
-export const validateEntry = (content: string): ValidationResult => {
-  const errors: Array<{ field: string; message: string; code?: string }> = [];
-  const warnings: Array<{ field: string; message: string }> = [];
-
-  if (!content.trim()) {
-    errors.push({
-      field: 'content',
-      message: 'Entry content cannot be empty',
-      code: 'REQUIRED_FIELD'
-    });
+// Storage utilities
+export const clearAllData = async (): Promise<void> => {
+  try {
+    // This would be implemented with the database service
+    localStorage.clear();
+    console.log('All data cleared successfully');
+  } catch (error) {
+    console.error('Failed to clear data:', error);
+    throw createAppError('CLEAR_DATA_FAILED', 'Failed to clear all data', error);
   }
-
-  if (content.length < 10) {
-    warnings.push({
-      field: 'content',
-      message: 'Consider writing more to get better insights'
-    });
-  }
-
-  return {
-    isValid: errors.length === 0,
-    errors,
-    warnings
-  };
 };
 
-//# sourceMappingURL=utils.d.ts.map
+// Data export/import utilities
+export const exportToJSON = (data: any): string => {
+  return JSON.stringify(data, null, 2);
+};
+
+export const importFromJSON = <T>(jsonString: string): T => {
+  try {
+    return JSON.parse(jsonString);
+  } catch (error) {
+    throw createAppError('INVALID_JSON', 'Invalid JSON format', error);
+  }
+};
+
+// Theme utilities
+export const getSystemTheme = (): 'light' | 'dark' => {
+  if (typeof window === 'undefined') return 'light';
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+};
+
+export const applyTheme = (theme: 'light' | 'dark' | 'system'): void => {
+  const actualTheme = theme === 'system' ? getSystemTheme() : theme;
+  document.documentElement.classList.toggle('dark', actualTheme === 'dark');
+};
+
+// Chart data utilities
+export const prepareChartData = (moodEntries: any[]): any[] => {
+  return moodEntries.map(entry => ({
+    date: entry.date,
+    mood: entry.mood,
+    label: getMoodLabel(entry.mood)
+  }));
+};
+
+// Date range utilities
+export const getDateRange = (period: 'week' | 'month' | 'year' | 'all'): { start: Date; end: Date } => {
+  const end = new Date();
+  const start = new Date();
+  
+  switch (period) {
+    case 'week':
+      start.setDate(end.getDate() - 7);
+      break;
+    case 'month':
+      start.setMonth(end.getMonth() - 1);
+      break;
+    case 'year':
+      start.setFullYear(end.getFullYear() - 1);
+      break;
+    case 'all':
+      start.setFullYear(2020); // Set to a very early date
+      break;
+  }
+  
+  return { start, end };
+};

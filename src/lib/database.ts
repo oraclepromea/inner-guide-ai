@@ -1,5 +1,16 @@
 import Dexie, { type Table } from 'dexie';
-import type { JournalEntry, MoodEntry, AppSettings, UserPreferences, Achievement } from '../types';
+import type { 
+  JournalEntry, 
+  MoodEntry, 
+  AppSettings, 
+  UserPreferences, 
+  Achievement,
+  TherapySession,
+  TherapyMessage,
+  PersonalGrowthProfile,
+  TherapyGoal,
+  ChatMessage
+} from '../types';
 
 export class InnerGuideDB extends Dexie {
   journalEntries!: Table<JournalEntry>;
@@ -7,19 +18,26 @@ export class InnerGuideDB extends Dexie {
   settings!: Table<AppSettings>;
   userPreferences!: Table<UserPreferences>;
   achievements!: Table<Achievement>;
+  therapySessions!: Table<TherapySession>;
+  therapyMessages!: Table<TherapyMessage>;
+  personalGrowthProfile!: Table<PersonalGrowthProfile>;
+  therapyGoals!: Table<TherapyGoal>;
 
   constructor() {
     super('InnerGuideDB');
-    this.version(1).stores({
+    this.version(3).stores({
       journalEntries: '++id, date, createdAt, updatedAt, tags',
       moodEntries: '++id, date, createdAt, updatedAt, mood',
       settings: '++id',
       userPreferences: '++id',
-      achievements: '++id, type, unlockedAt'
+      achievements: '++id, type, unlockedAt',
+      therapySessions: '++id, createdAt, updatedAt, therapistPersonality',
+      therapyMessages: '++id, sessionId, sender, timestamp, type',
+      personalGrowthProfile: '++userId, updatedAt',
+      therapyGoals: '++id, category, targetDate, progress, createdAt'
     });
 
-    // Add hooks for data validation and automatic timestamps
-    this.journalEntries.hook('creating', (_primKey, obj, _trans) => {
+    this.journalEntries.hook('creating', (_primKey: any, obj: any, _trans: any) => {
       const now = new Date().toISOString();
       obj.createdAt = now;
       obj.updatedAt = now;
@@ -29,11 +47,11 @@ export class InnerGuideDB extends Dexie {
       }
     });
 
-    this.journalEntries.hook('updating', (modifications: Partial<JournalEntry>, _primKey, _obj, _trans) => {
+    this.journalEntries.hook('updating', (modifications: any, _primKey: any, _obj: any, _trans: any) => {
       modifications.updatedAt = new Date().toISOString();
     });
 
-    this.moodEntries.hook('creating', (_primKey, obj, _trans) => {
+    this.moodEntries.hook('creating', (_primKey: any, obj: any, _trans: any) => {
       const now = new Date().toISOString();
       obj.createdAt = now;
       obj.updatedAt = now;
@@ -43,7 +61,29 @@ export class InnerGuideDB extends Dexie {
       }
     });
 
-    this.moodEntries.hook('updating', (modifications: Partial<MoodEntry>, _primKey, _obj, _trans) => {
+    this.moodEntries.hook('updating', (modifications: any, _primKey: any, _obj: any, _trans: any) => {
+      modifications.updatedAt = new Date().toISOString();
+    });
+
+    // Add therapy-related hooks
+    this.therapySessions.hook('creating', (_primKey: any, obj: any, _trans: any) => {
+      const now = new Date().toISOString();
+      obj.createdAt = now;
+      obj.updatedAt = now;
+      if (!obj.messages) obj.messages = [];
+      if (!obj.tags) obj.tags = [];
+    });
+
+    this.therapyGoals.hook('creating', (_primKey: any, obj: any, _trans: any) => {
+      const now = new Date().toISOString();
+      obj.createdAt = now;
+      obj.updatedAt = now;
+      if (!obj.milestones) obj.milestones = [];
+      if (!obj.strategies) obj.strategies = [];
+      if (!obj.obstacles) obj.obstacles = [];
+    });
+
+    this.therapyGoals.hook('updating', (modifications: any, _primKey: any, _obj: any, _trans: any) => {
       modifications.updatedAt = new Date().toISOString();
     });
   }
@@ -293,5 +333,258 @@ export const dbOperations = {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
       .map(([tag, count]) => ({ tag, count }));
+  },
+
+  // Therapy operations
+  async getTherapySessions(limit = 20, offset = 0) {
+    const cacheKey = `therapy_sessions_${limit}_${offset}`;
+    const cached = dbCache.get(cacheKey);
+    if (cached) return cached;
+
+    try {
+      const sessions = await db.therapySessions
+        .orderBy('startTime')
+        .reverse()
+        .offset(offset)
+        .limit(limit)
+        .toArray();
+      
+      dbCache.set(cacheKey, sessions, 2 * 60 * 1000);
+      return sessions;
+    } catch (error) {
+      console.error('Error fetching therapy sessions:', error);
+      throw new Error('Failed to load therapy sessions');
+    }
+  },
+
+  async createTherapySession(session: Omit<TherapySession, 'id'>) {
+    try {
+      const id = await db.therapySessions.add(session);
+      dbCache.clear();
+      return { ...session, id };
+    } catch (error) {
+      console.error('Error creating therapy session:', error);
+      throw new Error('Failed to create therapy session');
+    }
+  },
+
+  async updateTherapySession(id: number, updates: Partial<TherapySession>) {
+    try {
+      await db.therapySessions.update(id, updates);
+      dbCache.clear();
+      return await db.therapySessions.get(id);
+    } catch (error) {
+      console.error('Error updating therapy session:', error);
+      throw new Error('Failed to update therapy session');
+    }
+  },
+
+  async deleteTherapySession(id: number) {
+    try {
+      // Delete associated messages first
+      await db.therapyMessages.where('sessionId').equals(id).delete();
+      // Then delete the session
+      await db.therapySessions.delete(id);
+      dbCache.clear();
+    } catch (error) {
+      console.error('Error deleting therapy session:', error);
+      throw new Error('Failed to delete therapy session');
+    }
+  },
+
+  async getTherapyMessages(sessionId: number) {
+    const cacheKey = `therapy_messages_${sessionId}`;
+    const cached = dbCache.get(cacheKey);
+    if (cached) return cached;
+
+    try {
+      const messages = await db.therapyMessages
+        .where('sessionId')
+        .equals(sessionId)
+        .sortBy('timestamp');
+      
+      dbCache.set(cacheKey, messages, 1 * 60 * 1000);
+      return messages;
+    } catch (error) {
+      console.error('Error fetching therapy messages:', error);
+      throw new Error('Failed to load therapy messages');
+    }
+  },
+
+  async addTherapyMessage(message: Omit<TherapyMessage, 'id'>) {
+    try {
+      const id = await db.therapyMessages.add(message);
+      dbCache.clear();
+      return { ...message, id };
+    } catch (error) {
+      console.error('Error adding therapy message:', error);
+      throw new Error('Failed to add therapy message');
+    }
+  },
+
+  async addChatMessage(message: Omit<ChatMessage, 'id'>) {
+    try {
+      // Since chatMessages table doesn't exist, we'll use therapyMessages instead
+      const therapyMessage: Omit<TherapyMessage, 'id'> = {
+        content: message.content,
+        sender: message.role === 'user' ? 'user' : 'therapist',
+        timestamp: message.timestamp,
+        type: 'text'
+      };
+      const id = await db.therapyMessages.add(therapyMessage as any);
+      dbCache.clear();
+      return { ...message, id: id.toString() };
+    } catch (error) {
+      console.error('Error adding chat message:', error);
+      throw new Error('Failed to add chat message');
+    }
+  },
+
+  async getChatMessages(sessionId: string) {
+    const cacheKey = `chat_messages_${sessionId}`;
+    const cached = dbCache.get(cacheKey);
+    if (cached) return cached;
+
+    try {
+      const messages = await db.therapyMessages
+        .where('sessionId')
+        .equals(parseInt(sessionId))
+        .sortBy('timestamp');
+      
+      // Convert to ChatMessage format
+      const chatMessages = messages.map(msg => ({
+        id: msg.id?.toString() || '',
+        content: msg.content,
+        role: msg.sender === 'user' ? 'user' : 'assistant',
+        timestamp: msg.timestamp
+      }));
+      
+      dbCache.set(cacheKey, chatMessages, 1 * 60 * 1000);
+      return chatMessages;
+    } catch (error) {
+      console.error('Error fetching chat messages:', error);
+      throw new Error('Failed to load chat messages');
+    }
+  },
+
+  async getPersonalGrowthProfile(userId: string = 'default') {
+    const cacheKey = `growth_profile_${userId}`;
+    const cached = dbCache.get(cacheKey);
+    if (cached) return cached;
+
+    try {
+      let profile = await db.personalGrowthProfile
+        .where('userId')
+        .equals(userId)
+        .first();
+
+      if (!profile) {
+        // Create default profile
+        profile = {
+          userId,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          emotionalPatterns: {
+            frequency: {},
+            weeklyVariation: {},
+            monthlyTrends: {}
+          },
+          recurringThemes: {
+            topics: [],
+            positive: [],
+            challenges: [],
+            relationships: [],
+            work: [],
+            health: []
+          },
+          progressMetrics: {
+            resilience: 0,
+            selfAwareness: 0,
+            emotionalRange: 0,
+            copingEffectiveness: 0,
+            communicationSkills: 0,
+            stressManagement: 0
+          },
+          conversationInsights: {
+            totalSessions: 0,
+            averageSessionLength: 0,
+            preferredTopics: [],
+            mostHelpfulInterventions: [],
+            growthAreas: []
+          },
+          goalTracking: {
+            activeGoals: [],
+            completedGoals: [],
+            goalAchievementRate: 0
+          }
+        };
+        
+        await db.personalGrowthProfile.add(profile);
+      }
+      
+      dbCache.set(cacheKey, profile, 5 * 60 * 1000);
+      return profile;
+    } catch (error) {
+      console.error('Error fetching growth profile:', error);
+      throw new Error('Failed to load personal growth profile');
+    }
+  },
+
+  async updatePersonalGrowthProfile(userId: string, updates: Partial<PersonalGrowthProfile>) {
+    try {
+      await db.personalGrowthProfile
+        .where('userId')
+        .equals(userId)
+        .modify({ ...updates, updatedAt: new Date().toISOString() });
+      
+      dbCache.delete(`growth_profile_${userId}`);
+      return await this.getPersonalGrowthProfile(userId);
+    } catch (error) {
+      console.error('Error updating growth profile:', error);
+      throw new Error('Failed to update personal growth profile');
+    }
+  },
+
+  async getTherapyGoals(category?: string) {
+    const cacheKey = `therapy_goals_${category || 'all'}`;
+    const cached = dbCache.get(cacheKey);
+    if (cached) return cached;
+
+    try {
+      let query = db.therapyGoals.orderBy('createdAt').reverse();
+      
+      if (category) {
+        query = db.therapyGoals.where('category').equals(category);
+      }
+      
+      const goals = await query.toArray();
+      dbCache.set(cacheKey, goals, 2 * 60 * 1000);
+      return goals;
+    } catch (error) {
+      console.error('Error fetching therapy goals:', error);
+      throw new Error('Failed to load therapy goals');
+    }
+  },
+
+  async addTherapyGoal(goal: Omit<TherapyGoal, 'id'>) {
+    try {
+      const id = await db.therapyGoals.add(goal);
+      dbCache.clear();
+      return { ...goal, id };
+    } catch (error) {
+      console.error('Error adding therapy goal:', error);
+      throw new Error('Failed to add therapy goal');
+    }
+  },
+
+  async updateTherapyGoal(id: string, updates: Partial<TherapyGoal>) {
+    try {
+      await db.therapyGoals.update(id, updates);
+      dbCache.clear();
+      return await db.therapyGoals.get(id);
+    } catch (error) {
+      console.error('Error updating therapy goal:', error);
+      throw new Error('Failed to update therapy goal');
+    }
   }
 };

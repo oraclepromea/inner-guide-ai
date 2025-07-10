@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Loader2, Search, Filter, Tag, Smile, SortAsc, SortDesc, X } from 'lucide-react';
+import { Search, Filter, Tag, Smile, SortAsc, SortDesc, X } from 'lucide-react';
 import { useAppStore } from '../stores';
 import type { JournalEntry } from '../types';
 import { JournalEntryCard } from './JournalEntryCard.tsx';
@@ -7,7 +7,7 @@ import { AddEntryForm } from './AddEntryForm.tsx';
 import { AIInsightsModal } from './AIInsightsModal';
 
 export const JournalTab: React.FC = () => {
-  const { journalEntries, isLoadingJournal, addJournalEntry } = useAppStore();
+  const { journalEntries, addJournalEntry } = useAppStore();
   const [newEntryContent, setNewEntryContent] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -16,7 +16,7 @@ export const JournalTab: React.FC = () => {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [showFilters, setShowFilters] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedEntry, setSelectedEntry] = useState<number | null>(null);
+  const [selectedEntry, setSelectedEntry] = useState<string | null>(null);
 
   // Get all unique tags from entries
   const allTags = useMemo(() => {
@@ -71,7 +71,13 @@ export const JournalTab: React.FC = () => {
   const handleAddEntry = async (content: string, entryData?: any) => {
     setIsSubmitting(true);
     try {
-      await addJournalEntry(content, entryData);
+      await addJournalEntry({
+        title: entryData?.title || `Entry ${new Date().toLocaleDateString()}`,
+        content,
+        date: new Date().toISOString().split('T')[0], // Add the required date field
+        mood: entryData?.mood || 3,
+        tags: entryData?.tags || []
+      });
       setNewEntryContent('');
     } catch (error) {
       console.error('Failed to add entry:', error);
@@ -96,13 +102,7 @@ export const JournalTab: React.FC = () => {
 
   const activeFiltersCount = (searchQuery ? 1 : 0) + selectedTags.length + (moodFilter ? 1 : 0);
 
-  if (isLoadingJournal) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-12 h-12 animate-spin text-primary-400 mx-auto mb-4" />
-      </div>
-    );
-  }
+  // Remove the loading check since isLoadingJournal doesn't exist in AppState
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -285,7 +285,64 @@ export const JournalTab: React.FC = () => {
       {/* AI Insights Modal */}
       {selectedEntry && (
         <AIInsightsModal
-          insights={journalEntries.find((e: JournalEntry) => e.id === selectedEntry)?.aiInsights!}
+          insights={(() => {
+            const entry = journalEntries.find((e: JournalEntry) => e.id?.toString() === selectedEntry);
+            const aiInsights = entry?.aiInsights;
+            
+            // Convert AIAnalysisResult to EnhancedAIInsights format
+            if (aiInsights) {
+              return {
+                sentiment: {
+                  score: aiInsights.sentiment.score,
+                  label: aiInsights.sentiment.label,
+                  confidence: aiInsights.sentiment.confidence,
+                  emotions: []
+                },
+                themes: aiInsights.themes || [],
+                suggestions: aiInsights.suggestions || [],
+                reflectionPrompts: aiInsights.reflectionPrompts || [],
+                writingPatterns: {
+                  complexity: 'moderate' as const,
+                  tone: 'neutral',
+                  keyPhrases: [],
+                  wordCount: entry?.content?.split(' ').length || 0,
+                  readingLevel: 'intermediate'
+                },
+                personalizedInsights: {
+                  recommendations: [],
+                  trends: [],
+                  concerns: []
+                },
+                createdAt: new Date().toISOString()
+              };
+            }
+            
+            // Fallback empty insights
+            return {
+              sentiment: {
+                score: 0,
+                label: 'neutral' as const,
+                confidence: 0,
+                emotions: []
+              },
+              themes: [],
+              suggestions: [],
+              reflectionPrompts: [],
+              writingPatterns: {
+                complexity: 'moderate' as const,
+                tone: 'neutral',
+                keyPhrases: [],
+                wordCount: 0,
+                readingLevel: 'intermediate'
+              },
+              personalizedInsights: {
+                recommendations: [],
+                trends: [],
+                concerns: []
+              },
+              createdAt: new Date().toISOString()
+            };
+          })()}
           onClose={() => setSelectedEntry(null)}
         />
       )}

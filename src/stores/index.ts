@@ -1,176 +1,80 @@
 import { create } from 'zustand';
+import { format } from 'date-fns';
 import type { 
+  AppState, 
   JournalEntry, 
   MoodEntry, 
-  AppSettings, 
-  UserPreferences, 
+  TherapySession, 
+  TherapyMessage,
+  LocationData,
+  MoonPhaseData,
+  AppSettings,
+  UserPreferences,
   NotificationState,
   AnalyticsData,
-  Achievement,
-  LocationData,
+  CorrelationInsight,
+  TherapistPersonality,
   TabType
 } from '../types';
 import { db } from '../lib/database';
-import { getCurrentLocation, getMoonPhase, formatDate, formatTime } from '../utils';
+import { analyzeJournalEntry } from '../lib/aiService';
 
-// Removed unused interfaces and cleaned up imports
-
-interface ExportData {
-  journalEntries: JournalEntry[];
-  moodEntries: MoodEntry[];
-  settings: AppSettings;
-  preferences: UserPreferences;
-  analytics: AnalyticsData;
-  exportedAt: string;
-  version: string;
-}
-
-interface AppState {
-  // Journal state
-  journalEntries: JournalEntry[];
-  isLoadingJournal: boolean;
-  selectedEntry: JournalEntry | null;
-  
-  // Mood state
-  moodEntries: MoodEntry[];
-  isLoadingMood: boolean;
-  
-  // App settings
-  settings: AppSettings;
-  userPreferences: UserPreferences;
-  
-  // UI state
-  activeTab: TabType;
-  isAnalyzing: boolean;
-  
-  // Notifications
-  notifications: NotificationState[];
-  
-  // Achievements
-  achievements: Achievement[];
-  
-  // Analytics
-  analyticsData: AnalyticsData | null;
-  
-  // Streaks
-  journalStreak: number;
-  moodStreak: number;
-  
-  // Actions
-  initializeApp: () => Promise<void>;
-  loadJournalEntries: () => Promise<void>;
-  addJournalEntry: (content: string, entryData?: any) => Promise<void>;
-  updateJournalEntry: (id: number, updates: Partial<JournalEntry>) => Promise<void>;
-  deleteJournalEntry: (id: number) => Promise<void>;
-  analyzeEntry: (entry: JournalEntry) => Promise<void>;
-  
-  loadMoodEntries: () => Promise<void>;
-  addMoodEntry: (mood: number, moodLabel: string, notes?: string) => Promise<void>;
-  updateMoodEntry: (id: number, updates: Partial<MoodEntry>) => Promise<void>;
-  deleteMoodEntry: (id: number) => Promise<void>;
-  
-  // Settings actions
-  updateSettings: (updates: Partial<AppSettings>) => Promise<void>;
-  updateUserPreferences: (updates: Partial<UserPreferences>) => Promise<void>;
-  
-  // Notification actions
-  addNotification: (notification: Omit<NotificationState, 'id' | 'timestamp' | 'read'>) => void;
-  markNotificationAsRead: (id: string) => void;
-  removeNotification: (id: string) => void;
-  clearAllNotifications: () => void;
-  
-  // Analytics actions
-  getAnalytics: () => AnalyticsData;
-  
-  // UI actions
-  setActiveTab: (tab: TabType) => void;
-  setSelectedEntry: (entry: JournalEntry | null) => void;
-  
-  // Data management
-  exportAllData: () => Promise<void>;
-  importData: (data: ExportData) => Promise<void>;
-  clearAllData: () => Promise<void>;
-}
-
-const defaultSettings: AppSettings = {
-  theme: 'system',
-  notifications: true,
-  exportFormat: 'json',
-  dataRetentionDays: 365,
-  autoBackup: false,
-  encryptData: false,
-  language: 'en',
-  timezone: 'UTC',
-  privacyMode: false,
-  analyticsEnabled: true,
-  autoSave: true,
-  enableLocation: true,
-  reminderEnabled: false
-};
-
-const defaultUserPreferences: UserPreferences = {
-  reminderTime: '09:00',
-  journalPrompts: [],
-  moodTriggers: [],
-  goals: [],
-  favoriteQuotes: [],
-  customTags: [],
-  writingTargets: {
-    dailyWordCount: 250,
-    weeklyEntries: 5,
-    monthlyGoals: []
-  },
-  onboardingCompleted: false,
-  lastActiveDate: new Date().toISOString(),
-  dateFormat: 'MM/DD/YYYY'
-};
-
+// Create the store implementing the AppState interface
 export const useAppStore = create<AppState>((set, get) => ({
   // Initial state
   journalEntries: [],
-  isLoadingJournal: false,
-  selectedEntry: null,
-  
   moodEntries: [],
-  isLoadingMood: false,
-  
-  settings: defaultSettings,
-  userPreferences: defaultUserPreferences,
-  
-  activeTab: 'journal',
-  isAnalyzing: false,
-  
+  settings: {
+    theme: 'dark',
+    notifications: true,
+    exportFormat: 'json',
+    dataRetentionDays: 365,
+    autoBackup: false,
+    encryptData: false,
+    language: 'en',
+    timezone: 'UTC',
+    privacyMode: false,
+    analyticsEnabled: true,
+    autoSave: true,
+    enableLocation: true,
+    reminderEnabled: false
+  },
+  preferences: {
+    journalPrompts: [],
+    moodTriggers: [],
+    goals: [],
+    favoriteQuotes: [],
+    customTags: [],
+    writingTargets: {
+      dailyWordCount: 250,
+      weeklyEntries: 5,
+      monthlyGoals: []
+    },
+    onboardingCompleted: false,
+    lastActiveDate: new Date().toISOString(),
+    dateFormat: 'MM/DD/YYYY'
+  },
   notifications: [],
   achievements: [],
-  analyticsData: null,
+  analytics: null,
   
-  journalStreak: 0,
-  moodStreak: 0,
+  activeTab: 'journal',
+  isLoading: false,
+  error: null,
 
-  // Initialize app
-  initializeApp: async () => {
-    set({ isLoadingJournal: true, isLoadingMood: true });
-    
-    try {
-      await Promise.all([
-        get().loadJournalEntries(),
-        get().loadMoodEntries()
-      ]);
-    } catch (error) {
-      console.error('Failed to initialize app:', error);
-      get().addNotification({
-        type: 'error',
-        title: 'App Error',
-        message: 'Failed to load app data'
-      });
-    } finally {
-      set({ isLoadingJournal: false, isLoadingMood: false });
-    }
-  },
-  
+  currentLocation: null,
+  currentMoonPhase: null,
+
+  therapySessions: [],
+  currentSession: null,
+  messages: [],
+  isLoadingTherapy: false,
+  isTyping: false,
+  selectedTherapist: 'empathetic',
+
   // Journal actions
-  loadJournalEntries: async () => {
-    set({ isLoadingJournal: true });
+  getJournalEntries: async () => {
+    set({ isLoading: true });
     try {
       const entries = await db.journalEntries.orderBy('createdAt').reverse().toArray();
       set({ journalEntries: entries });
@@ -178,268 +82,202 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.error('Failed to load journal entries:', error);
       get().addNotification({
         type: 'error',
-        title: 'Loading Error',
-        message: 'Failed to load journal entries.'
+        title: 'Load Error',
+        message: 'Failed to load journal entries'
       });
     } finally {
-      set({ isLoadingJournal: false });
+      set({ isLoading: false });
     }
   },
-  
-  addJournalEntry: async (content: string, entryData?: any) => {
+
+  addJournalEntry: async (entry: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
       const now = new Date();
-      
-      // Use custom date/time if provided, otherwise use current
-      let entryDateTime = now;
-      if (entryData?.date && entryData?.time) {
-        const dateTimeString = `${entryData.date}T${entryData.time}:00`;
-        entryDateTime = new Date(dateTimeString);
-      }
-      
-      // Get location from entryData or fallback to geolocation
-      let location: LocationData | undefined = undefined;
-      if (entryData?.city && entryData?.country) {
-        location = {
-          city: entryData.city,
-          country: entryData.country,
-          flag: entryData.flag || '🌍',
-          coordinates: undefined
-        };
-      } else if (get().settings.enableLocation) {
-        try {
-          const locationData = await getCurrentLocation();
-          if (locationData.city && locationData.country) {
-            location = {
-              city: locationData.city,
-              country: locationData.country,
-              flag: locationData.flag,
-              coordinates: {
-                lat: locationData.latitude,
-                lng: locationData.longitude
-              }
-            };
-          }
-        } catch (error) {
-          console.log('Location detection failed:', error);
-          // Continue without location
-        }
-      }
-      
-      const moonPhase = getMoonPhase(entryDateTime);
-      
-      const entry: JournalEntry = {
-        content,
-        date: formatDate(entryDateTime),
-        time: formatTime(entryDateTime),
-        location,
-        moonPhase,
-        tags: entryData?.tags || [],
-        mood: entryData?.mood,
-        createdAt: entryDateTime.toISOString(),
-        updatedAt: entryDateTime.toISOString(),
-        wordCount: content.split(' ').length,
-        readingTime: Math.ceil(content.split(' ').length / 200)
+      const location = get().currentLocation;
+      const moonPhase = get().currentMoonPhase;
+
+      const newEntry = {
+        title: entry.title || `Entry ${format(now, 'MMM dd, yyyy')}`,
+        content: entry.content,
+        date: format(now, 'yyyy-MM-dd'),
+        mood: entry.mood,
+        tags: entry.tags || [],
+        location: location || undefined,
+        moonPhase: moonPhase?.phase,
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString()
       };
-      
-      const id = await db.journalEntries.add(entry);
-      const newEntry = { ...entry, id };
+
+      const id = await db.journalEntries.add(newEntry as any);
       
       set(state => ({
-        journalEntries: [newEntry, ...state.journalEntries]
+        journalEntries: [{ ...newEntry, id: id.toString() }, ...state.journalEntries]
       }));
-      
-      // Add success notification
-      get().addNotification({
-        type: 'success',
-        title: 'Entry Added',
-        message: 'Your journal entry has been saved successfully!'
-      });
-      
+
+      // Generate AI insights asynchronously
+      if (typeof id === 'number' || typeof id === 'string') {
+        get().generateAIInsights({ ...newEntry, id: id.toString() });
+      }
     } catch (error) {
-      console.error('Failed to add journal entry:', error);
-      get().addNotification({
-        type: 'error',
-        title: 'Error',
-        message: 'Failed to save your journal entry. Please try again.'
-      });
+      console.error('Error adding journal entry:', error);
+      throw error;
     }
   },
-  
-  updateJournalEntry: async (id: number, updates: Partial<JournalEntry>) => {
+
+  updateJournalEntry: async (id: string, updates: Partial<JournalEntry>) => {
     try {
-      const updatedEntry = {
-        ...updates,
-        updatedAt: new Date().toISOString()
-      };
-      
-      await db.journalEntries.update(id, updatedEntry);
+      const updatedData = { ...updates, updatedAt: new Date().toISOString() };
+      await db.journalEntries.update(parseInt(id), updatedData);
       
       set(state => ({
-        journalEntries: state.journalEntries.map(entry => 
-          entry.id === id ? { ...entry, ...updatedEntry } : entry
+        journalEntries: state.journalEntries.map(entry =>
+          entry.id === id ? { ...entry, ...updatedData } : entry
         )
       }));
     } catch (error) {
-      console.error('Failed to update journal entry:', error);
+      console.error('Error updating journal entry:', error);
+      throw error;
     }
   },
-  
-  deleteJournalEntry: async (id: number) => {
+
+  deleteJournalEntry: async (id: string) => {
     try {
-      await db.journalEntries.delete(id);
+      await db.journalEntries.delete(parseInt(id));
       
       set(state => ({
-        journalEntries: state.journalEntries.filter(entry => entry.id !== id),
-        selectedEntry: state.selectedEntry?.id === id ? null : state.selectedEntry
+        journalEntries: state.journalEntries.filter(entry => entry.id !== id)
       }));
-    } catch (error) {
-      console.error('Failed to delete journal entry:', error);
-    }
-  },
-  
-  analyzeEntry: async (entry: JournalEntry) => {
-    set({ isAnalyzing: true });
-    try {
-      // Mock AI analysis - in real implementation, this would call an AI service
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
-      
-      // Add a notification that analysis is complete
+
       get().addNotification({
         type: 'success',
-        title: 'Analysis Complete',
-        message: `Your journal entry from ${entry.date} has been analyzed with AI insights.`
+        title: 'Entry Deleted',
+        message: 'Your journal entry has been deleted'
       });
     } catch (error) {
-      console.error('Failed to analyze entry:', error);
+      console.error('Failed to delete journal entry:', error);
       get().addNotification({
         type: 'error',
-        title: 'Analysis Failed',
-        message: 'Failed to analyze journal entry. Please try again.'
+        title: 'Delete Error',
+        message: 'Failed to delete journal entry'
       });
-    } finally {
-      set({ isAnalyzing: false });
     }
   },
-  
+
   // Mood actions
-  loadMoodEntries: async () => {
-    set({ isLoadingMood: true });
+  getMoodEntries: async () => {
+    set({ isLoading: true });
     try {
-      const entries = await db.moodEntries.orderBy('date').reverse().toArray();
+      const entries = await db.moodEntries.orderBy('createdAt').reverse().toArray();
       set({ moodEntries: entries });
     } catch (error) {
       console.error('Failed to load mood entries:', error);
       get().addNotification({
         type: 'error',
-        title: 'Loading Error',
-        message: 'Failed to load mood entries.'
+        title: 'Load Error',
+        message: 'Failed to load mood entries'
       });
     } finally {
-      set({ isLoadingMood: false });
+      set({ isLoading: false });
     }
   },
-  
-  addMoodEntry: async (mood: number, moodLabel: string, notes?: string) => {
+
+  addMoodEntry: async (entry: Omit<MoodEntry, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
       const now = new Date();
-      const entry: MoodEntry = {
-        date: formatDate(now),
-        mood,
-        moodLabel,
-        notes,
+      const newEntry = {
+        date: format(now, 'yyyy-MM-dd'),
+        mood: entry.mood,
+        notes: entry.notes || '',
         createdAt: now.toISOString(),
         updatedAt: now.toISOString()
       };
-      
-      const id = await db.moodEntries.add(entry);
-      const newEntry = { ...entry, id };
+
+      const id = await db.moodEntries.add(newEntry as any);
       
       set(state => ({
-        moodEntries: [newEntry, ...state.moodEntries]
+        moodEntries: [{ ...newEntry, id: id.toString() }, ...state.moodEntries]
       }));
-      
-      // Add success notification
-      get().addNotification({
-        type: 'success',
-        title: 'Mood Logged',
-        message: `Mood "${moodLabel}" has been recorded!`
-      });
-      
     } catch (error) {
-      console.error('Failed to add mood entry:', error);
-      get().addNotification({
-        type: 'error',
-        title: 'Error',
-        message: 'Failed to save your mood entry. Please try again.'
-      });
+      console.error('Error adding mood entry:', error);
+      throw error;
     }
   },
-  
-  updateMoodEntry: async (id: number, updates: Partial<MoodEntry>) => {
+
+  updateMoodEntry: async (id: string, updates: Partial<MoodEntry>) => {
     try {
-      const updatedEntry = {
-        ...updates,
-        updatedAt: new Date().toISOString()
-      };
-      
-      await db.moodEntries.update(id, updatedEntry);
+      await db.moodEntries.update(parseInt(id), updates);
       
       set(state => ({
-        moodEntries: state.moodEntries.map(entry => 
-          entry.id === id ? { ...entry, ...updatedEntry } : entry
+        moodEntries: state.moodEntries.map(entry =>
+          entry.id === id ? { ...entry, ...updates } : entry
         )
       }));
+
+      get().addNotification({
+        type: 'success',
+        title: 'Mood Updated',
+        message: 'Your mood entry has been updated'
+      });
     } catch (error) {
       console.error('Failed to update mood entry:', error);
+      get().addNotification({
+        type: 'error',
+        title: 'Update Error',
+        message: 'Failed to update mood entry'
+      });
     }
   },
-  
-  deleteMoodEntry: async (id: number) => {
+
+  deleteMoodEntry: async (id: string) => {
     try {
-      await db.moodEntries.delete(id);
+      await db.moodEntries.delete(parseInt(id));
       
       set(state => ({
         moodEntries: state.moodEntries.filter(entry => entry.id !== id)
       }));
+
+      get().addNotification({
+        type: 'success',
+        title: 'Mood Entry Deleted',
+        message: 'Your mood entry has been deleted'
+      });
     } catch (error) {
       console.error('Failed to delete mood entry:', error);
+      get().addNotification({
+        type: 'error',
+        title: 'Delete Error',
+        message: 'Failed to delete mood entry'
+      });
     }
   },
-  
+
   // Settings actions
   updateSettings: async (updates: Partial<AppSettings>) => {
     try {
       const newSettings = { ...get().settings, ...updates };
+      await db.settings.put(newSettings);
       set({ settings: newSettings });
-      
-      // Save to database
-      await db.settings.clear();
-      await db.settings.add(newSettings);
       
       get().addNotification({
         type: 'success',
         title: 'Settings Updated',
-        message: 'Your settings have been saved successfully!'
+        message: 'Your settings have been saved'
       });
     } catch (error) {
       console.error('Failed to update settings:', error);
       get().addNotification({
         type: 'error',
-        title: 'Error',
-        message: 'Failed to save settings. Please try again.'
+        title: 'Settings Error',
+        message: 'Failed to save settings'
       });
     }
   },
 
-  updateUserPreferences: async (updates: Partial<UserPreferences>) => {
+  updatePreferences: async (updates: Partial<UserPreferences>) => {
     try {
-      const newPreferences = { ...get().userPreferences, ...updates };
-      set({ userPreferences: newPreferences });
-      
-      // Save to database
-      await db.userPreferences.clear();
-      await db.userPreferences.add(newPreferences);
+      const newPreferences = { ...get().preferences, ...updates };
+      await db.userPreferences.put(newPreferences);
+      set({ preferences: newPreferences });
     } catch (error) {
       console.error('Failed to update user preferences:', error);
     }
@@ -449,89 +287,74 @@ export const useAppStore = create<AppState>((set, get) => ({
   addNotification: (notification: Omit<NotificationState, 'id' | 'timestamp' | 'read'>) => {
     const newNotification: NotificationState = {
       ...notification,
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
       read: false
     };
-    
-    set(state => ({
-      notifications: [newNotification, ...state.notifications]
+    set((state) => ({
+      notifications: [...state.notifications, newNotification]
     }));
-    
-    // Auto-remove after duration
-    if (notification.duration) {
-      setTimeout(() => {
-        get().removeNotification(newNotification.id);
-      }, notification.duration);
-    }
   },
 
-  markNotificationAsRead: (id: string) => {
-    set(state => ({
-      notifications: state.notifications.map(notif =>
-        notif.id === id ? { ...notif, read: true } : notif
+  markNotificationRead: (id: string) => {
+    set((state) => ({
+      notifications: state.notifications.map((n) =>
+        n.id === id ? { ...n, read: true } : n
       )
     }));
   },
 
   removeNotification: (id: string) => {
-    set(state => ({
-      notifications: state.notifications.filter(notif => notif.id !== id)
+    set((state) => ({
+      notifications: state.notifications.filter((n) => n.id !== id)
     }));
   },
 
-  clearAllNotifications: () => {
+  clearNotifications: () => {
     set({ notifications: [] });
   },
-
-  // Analytics computation
-  getAnalytics: () => {
-    const journalEntries = get().journalEntries;
-    const moodEntries = get().moodEntries;
+  
+  // Analytics actions
+  getAnalytics: async (): Promise<AnalyticsData> => {
+    const state = get();
+    const moodEntries = state.moodEntries;
     
-    const totalEntries = journalEntries.length + moodEntries.length;
-
-    // Generate mock analytics data
-    const writingPatterns = {
-      wordCount: {
-        average: journalEntries.length > 0 
-          ? journalEntries.reduce((sum, entry) => sum + (entry.wordCount || 0), 0) / journalEntries.length 
-          : 0,
-        trend: 'stable' as const,
-        history: journalEntries.map(entry => ({
-          date: entry.date,
-          count: entry.wordCount || 0
-        }))
-      },
-      frequency: {
-        entriesPerWeek: totalEntries / 4, // Rough estimate
-        streak: get().journalStreak,
-        longestStreak: get().journalStreak
-      },
-      themes: [
-        { theme: 'personal growth', count: 5, trend: 'increasing' },
-        { theme: 'work stress', count: 3, trend: 'stable' }
-      ]
-    };
-
-    const insights = {
-      correlations: [],
-      recommendations: [
-        'Try writing in the morning for better consistency',
-        'Consider adding more detail to shorter entries'
-      ],
-      achievements: []
-    };
-
     return {
       moodTrends: {
         daily: moodEntries.map(entry => ({ date: entry.date, mood: entry.mood })),
         weekly: [],
         monthly: []
       },
-      writingPatterns,
-      insights
-    } as AnalyticsData;
+      writingPatterns: {
+        wordCount: {
+          average: 250,
+          trend: 'stable',
+          history: []
+        },
+        frequency: {
+          entriesPerWeek: 5,
+          streak: 0,
+          longestStreak: 0
+        },
+        themes: []
+      },
+      insights: {
+        correlations: [] as CorrelationInsight[],
+        recommendations: [] as string[],
+        achievements: [] as string[]
+      }
+    };
+  },
+
+  generateAIInsights: async (entry: JournalEntry) => {
+    try {
+      if (!entry.id) return; // Exit early if no ID
+      
+      const aiInsights = await analyzeJournalEntry(entry.content);
+      await get().updateJournalEntry(entry.id.toString(), { aiInsights });
+    } catch (error) {
+      console.error('Error generating AI insights:', error);
+    }
   },
 
   // UI actions
@@ -539,122 +362,322 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ activeTab: tab });
   },
 
-  setSelectedEntry: (entry: JournalEntry | null) => {
-    set({ selectedEntry: entry });
+  setLoading: (loading: boolean) => {
+    set({ isLoading: loading });
+  },
+
+  setError: (error: string | null) => {
+    set({ error });
   },
   
-  // Data management
-  exportAllData: async () => {
-    const { journalEntries, moodEntries, settings, userPreferences } = get();
-    const analyticsData = get().getAnalytics();
-    
-    const exportData = {
-      journalEntries,
-      moodEntries,
-      settings,
-      preferences: userPreferences,
-      analytics: analyticsData,
-      exportedAt: new Date().toISOString(),
-      version: '1.0.0'
-    };
-    
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `inner-guide-backup-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  // Location actions
+  updateLocation: (location: LocationData) => {
+    set({ currentLocation: location });
   },
 
-  importData: async (data: ExportData) => {
+  updateMoonPhase: (moonPhase: MoonPhaseData) => {
+    set({ currentMoonPhase: moonPhase });
+  },
+  
+  // Therapy actions
+  createTherapySession: async () => {
     try {
-      // Validate data structure
-      if (!data || typeof data !== 'object') {
-        throw new Error('Invalid data format');
-      }
+      const session = {
+        date: format(new Date(), 'yyyy-MM-dd'),
+        messages: [],
+        exercises: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
 
-      const { journalEntries = [], moodEntries = [], settings: importedSettings, preferences } = data;
+      const id = await db.therapySessions.add(session as any);
+      const newSession = { ...session, id: id.toString() } as TherapySession;
       
-      // Clear existing data
-      await db.journalEntries.clear();
-      await db.moodEntries.clear();
-      
-      // Import journal entries
-      if (Array.isArray(journalEntries)) {
-        await db.journalEntries.bulkAdd(journalEntries);
+      set(state => ({
+        therapySessions: [newSession, ...state.therapySessions],
+        currentSession: newSession,
+        messages: []
+      }));
+    } catch (error) {
+      console.error('Failed to create therapy session:', error);
+      get().addNotification({
+        type: 'error',
+        title: 'Session Error',
+        message: 'Failed to create therapy session'
+      });
+    }
+  },
+
+  loadTherapySessions: async () => {
+    set({ isLoadingTherapy: true });
+    try {
+      const sessions = await db.therapySessions.orderBy('createdAt').reverse().toArray();
+      set({ therapySessions: sessions.map(s => ({ ...s, id: s.id?.toString() || '' })) });
+    } catch (error) {
+      console.error('Failed to load therapy sessions:', error);
+      get().addNotification({
+        type: 'error',
+        title: 'Load Error',
+        message: 'Failed to load therapy sessions'
+      });
+    } finally {
+      set({ isLoadingTherapy: false });
+    }
+  },
+
+  loadSession: async (sessionId: string) => {
+    try {
+      const session = await db.therapySessions.get(parseInt(sessionId));
+      if (session) {
+        const messages = await db.therapyMessages
+          .where('sessionId')
+          .equals(parseInt(sessionId))
+          .toArray();
+        
+        set({ 
+          currentSession: { ...session, id: session.id?.toString() || '' },
+          messages: messages.map(m => ({ ...m, id: m.id?.toString() || '' }))
+        });
       }
+    } catch (error) {
+      console.error('Failed to load session:', error);
+    }
+  },
+
+  sendMessage: async (content: string) => {
+    const currentSession = get().currentSession;
+    if (!currentSession) return;
+
+    set({ isTyping: true });
+
+    try {
+      // Add user message
+      const userMessage = {
+        content,
+        sender: 'user' as const,
+        timestamp: new Date().toISOString(),
+        type: 'text' as const
+      };
+
+      const userMsgId = await db.therapyMessages.add(userMessage as any);
       
-      // Import mood entries
-      if (Array.isArray(moodEntries)) {
-        await db.moodEntries.bulkAdd(moodEntries);
+      // Generate therapist response using the helper function
+      const generateTherapistResponse = (
+        userMessage: string, 
+        personality: TherapistPersonality, 
+        messageHistory: TherapyMessage[]
+      ): string => {
+        const isFirstMessage = messageHistory.length === 0 || !userMessage.trim();
+        
+        if (isFirstMessage) {
+          const welcomeMessages = {
+            empathetic: "Hello! I'm here to listen and support you. How are you feeling today? Please feel free to share whatever is on your mind.",
+            analytical: "Welcome to our session. I'm here to help you analyze patterns and develop evidence-based strategies. What would you like to explore today?",
+            supportive: "Hi there! I'm excited to work with you toward your goals. What positive changes would you like to see in your life?",
+            direct: "Welcome. Let's get right to it - what's the main thing you'd like to work on today?"
+          };
+          return welcomeMessages[personality] || welcomeMessages.empathetic;
+        }
+
+        // Generate contextual responses based on personality and user input
+        const responses = {
+          empathetic: [
+            "I hear you, and what you're feeling makes complete sense. Thank you for sharing that with me.",
+            "That sounds really challenging. How has this been affecting you?",
+            "I can sense the emotion in your words. You're being really brave by opening up about this.",
+            "It's completely normal to feel this way. Many people struggle with similar experiences."
+          ],
+          analytical: [
+            "That's an interesting perspective. What evidence do you have for that thought?",
+            "Let's examine this belief more closely. Is there another way to look at this situation?",
+            "What would you tell a friend who was having this same thought?",
+            "Can you identify any thinking patterns that might be influencing how you feel about this?"
+          ],
+          supportive: [
+            "What would need to happen for this situation to improve even slightly?",
+            "Tell me about a time when you handled a similar challenge successfully.",
+            "What strengths do you have that could help you with this?",
+            "If this problem were solved, what would be different in your life?"
+          ],
+          direct: [
+            "What specific action can you take about this today?",
+            "Let's cut to the core - what's really bothering you here?",
+            "What's the most important thing for you to focus on right now?",
+            "What would change if you stopped doing this behavior?"
+          ]
+        };
+
+        const personalityResponses = responses[personality];
+        return personalityResponses[Math.floor(Math.random() * personalityResponses.length)];
+      };
+      
+      const therapistResponse = generateTherapistResponse(content, get().selectedTherapist, get().messages);
+      
+      // Add therapist message
+      const therapistMessage = {
+        content: therapistResponse,
+        sender: 'therapist' as const,
+        timestamp: new Date().toISOString(),
+        type: 'text' as const
+      };
+
+      const therapistMsgId = await db.therapyMessages.add(therapistMessage as any);
+
+      // Update messages in state
+      set(state => ({
+        messages: [
+          ...state.messages,
+          { ...userMessage, id: userMsgId.toString() },
+          { ...therapistMessage, id: therapistMsgId.toString() }
+        ]
+      }));
+    } catch (error) {
+      console.error('Failed to send message:', error);
+    } finally {
+      set({ isTyping: false });
+    }
+  },
+
+  archiveSession: async (sessionId: string) => {
+    try {
+      // Since 'archived' doesn't exist in TherapySession, we'll use a different approach
+      // We could add it to tags or just mark it differently
+      const session = await db.therapySessions.get(parseInt(sessionId));
+      if (session) {
+        const updatedTags = [...(session.tags || []), 'archived'];
+        await db.therapySessions.update(parseInt(sessionId), { tags: updatedTags });
       }
+      await get().loadTherapySessions();
+    } catch (error) {
+      console.error('Failed to archive session:', error);
+    }
+  },
+
+  deleteSession: async (sessionId: string) => {
+    try {
+      // Delete associated messages first
+      await db.therapyMessages.where('sessionId').equals(parseInt(sessionId)).delete();
+      // Then delete the session
+      await db.therapySessions.delete(parseInt(sessionId));
       
-      // Import settings
-      if (importedSettings) {
-        await db.settings.clear();
-        await db.settings.add(importedSettings);
-        set({ settings: importedSettings });
-      }
+      set(state => ({
+        therapySessions: state.therapySessions.filter(session => session.id !== sessionId),
+        currentSession: state.currentSession?.id === sessionId ? null : state.currentSession
+      }));
+    } catch (error) {
+      console.error('Failed to delete session:', error);
+    }
+  },
+
+  updateTherapistPersonality: (personality: TherapistPersonality) => {
+    set({ selectedTherapist: personality });
+  },
+
+  // Data management
+  exportData: async (): Promise<string> => {
+    try {
+      const state = get();
+      const exportData = {
+        journalEntries: state.journalEntries,
+        moodEntries: state.moodEntries,
+        settings: state.settings,
+        preferences: state.preferences,
+        analytics: await get().getAnalytics(),
+        exportedAt: new Date().toISOString(),
+        version: '1.0.0'
+      };
       
-      // Import preferences
-      if (preferences) {
-        await db.userPreferences.clear();
-        await db.userPreferences.add(preferences);
-        set({ userPreferences: preferences });
-      }
-      
-      // Refresh state
-      await get().loadJournalEntries();
-      await get().loadMoodEntries();
+      const dataString = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([dataString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `inner-guide-export-${format(new Date(), 'yyyy-MM-dd')}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
       
       get().addNotification({
         type: 'success',
-        title: 'Import Successful',
-        message: 'Your data has been successfully imported.'
+        title: 'Data Exported',
+        message: 'Your data has been successfully exported'
       });
+
+      return dataString;
     } catch (error) {
-      console.error('Import failed:', error);
+      console.error('Failed to export data:', error);
       get().addNotification({
         type: 'error',
-        title: 'Import Failed',
-        message: 'There was an error importing your data. Please check the file format.'
+        title: 'Export Error',
+        message: 'Failed to export data'
       });
       throw error;
     }
   },
 
+  importData: async (data: string) => {
+    try {
+      const parsedData = JSON.parse(data);
+      
+      await db.transaction('rw', [db.journalEntries, db.moodEntries, db.settings, db.userPreferences], async () => {
+        await db.journalEntries.clear();
+        await db.moodEntries.clear();
+        
+        await db.journalEntries.bulkAdd(parsedData.journalEntries);
+        await db.moodEntries.bulkAdd(parsedData.moodEntries);
+        await db.settings.put(parsedData.settings);
+        await db.userPreferences.put(parsedData.preferences);
+      });
+      
+      set({
+        journalEntries: parsedData.journalEntries,
+        moodEntries: parsedData.moodEntries,
+        settings: parsedData.settings,
+        preferences: parsedData.preferences
+      });
+      
+      get().addNotification({
+        type: 'success',
+        title: 'Data Imported',
+        message: 'Your data has been successfully imported'
+      });
+    } catch (error) {
+      console.error('Failed to import data:', error);
+      get().addNotification({
+        type: 'error',
+        title: 'Import Error',
+        message: 'Failed to import data'
+      });
+    }
+  },
+
   clearAllData: async () => {
     try {
-      await db.journalEntries.clear();
-      await db.moodEntries.clear();
-      await db.settings.clear();
-      await db.userPreferences.clear();
+      await db.delete();
+      await db.open();
       
       set({
         journalEntries: [],
         moodEntries: [],
-        settings: defaultSettings,
-        userPreferences: defaultUserPreferences,
-        achievements: [],
-        analyticsData: null,
-        journalStreak: 0,
-        moodStreak: 0
+        therapySessions: [],
+        currentSession: null,
+        messages: [],
+        notifications: [],
+        analytics: null
       });
       
       get().addNotification({
         type: 'success',
         title: 'Data Cleared',
-        message: 'All data has been cleared successfully!'
+        message: 'All data has been cleared'
       });
     } catch (error) {
       console.error('Failed to clear data:', error);
       get().addNotification({
         type: 'error',
-        title: 'Clear Failed',
-        message: 'Failed to clear data. Please try again.'
+        title: 'Clear Error',
+        message: 'Failed to clear data'
       });
     }
   }
