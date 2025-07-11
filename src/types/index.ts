@@ -673,4 +673,8 @@ export interface AppState {
   importData: (data: string) => Promise<void>;
   importJournalEntries: (entries: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>[], importSource?: string) => Promise<JournalEntry[]>;
   clearAllData: () => Promise<void>;
+  
+  // Duplicate detection methods
+  isDuplicateEntry: (entry: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>, existingEntries: JournalEntry[]) => boolean;
+  calculateContentSimilarity: (content1: string, content2: string) => number;
 }

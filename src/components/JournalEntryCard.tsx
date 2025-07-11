@@ -351,7 +351,7 @@ export const JournalEntryCard: React.FC<JournalEntryCardProps> = ({ entry }) => 
               <>
                 <button
                   onClick={() => setIsExpanded(!isExpanded)}
-                  className="btn-primary px-3 py-2 text-sm flex items-center space-x-2"
+                  className="bg-blue-600/90 hover:bg-blue-700 text-white border border-blue-500/50 px-3 py-2 text-sm flex items-center space-x-2 rounded-lg transition-colors disabled:opacity-50"
                   title={isExpanded ? 'Show preview' : 'Show full entry'}
                 >
                   <span>{isExpanded ? '👁️‍🗨️' : '👁️'}</span>
@@ -360,7 +360,7 @@ export const JournalEntryCard: React.FC<JournalEntryCardProps> = ({ entry }) => 
                 
                 <button
                   onClick={() => setIsEditing(true)}
-                  className="btn-secondary px-3 py-2 text-sm flex items-center space-x-2 rounded-lg transition-colors"
+                  className="bg-green-600/90 hover:bg-green-700 text-white border border-green-500/50 px-3 py-2 text-sm flex items-center space-x-2 rounded-lg transition-colors disabled:opacity-50"
                   title="Edit entry"
                 >
                   <Edit className="w-4 h-4" />
@@ -370,7 +370,7 @@ export const JournalEntryCard: React.FC<JournalEntryCardProps> = ({ entry }) => 
                 <button
                   onClick={handleAnalyze}
                   disabled={isAnalyzing}
-                  className="btn-secondary px-3 py-2 text-sm flex items-center space-x-2 disabled:opacity-50"
+                  className="bg-purple-600/90 hover:bg-purple-700 text-white border border-purple-500/50 px-3 py-2 text-sm flex items-center space-x-2 rounded-lg transition-colors disabled:opacity-50"
                   title="AI Insights"
                 >
                   {isAnalyzing ? (
@@ -384,7 +384,7 @@ export const JournalEntryCard: React.FC<JournalEntryCardProps> = ({ entry }) => 
                 <button
                   onClick={handleDelete}
                   disabled={isDeleting}
-                  className="btn-danger px-3 py-2 text-sm flex items-center space-x-2 disabled:opacity-50"
+                  className="bg-red-600/90 hover:bg-red-700 text-white border border-red-500/50 px-3 py-2 text-sm flex items-center space-x-2 rounded-lg transition-colors disabled:opacity-50"
                   title="Delete entry"
                 >
                   {isDeleting ? (
@@ -420,7 +420,11 @@ export const JournalEntryCard: React.FC<JournalEntryCardProps> = ({ entry }) => 
             <p className="whitespace-pre-wrap text-slate-200 leading-relaxed">
               {isExpanded ? entry.content : previewText}
               {hasMore && !isExpanded && (
-                <span className="text-blue-400"> ... (see more)</span>
+                <span className="text-blue-400 cursor-pointer ml-2 hover:text-blue-300 transition-colors" 
+                      onClick={() => setIsExpanded(true)}
+                      title="Click to expand">
+                  ... (see more)
+                </span>
               )}
             </p>
           )}

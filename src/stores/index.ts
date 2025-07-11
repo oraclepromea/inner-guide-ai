@@ -113,8 +113,51 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  // Enhanced duplicate detection with multiple criteria
+  isDuplicateEntry: (entry: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>, existingEntries: JournalEntry[]): boolean => {
+    return existingEntries.some(existing => {
+      // Check for exact content match with same date
+      const exactMatch = existing.content.trim() === entry.content.trim() && existing.date === entry.date;
+      
+      // Check for similar content (90% similarity) on same date
+      const contentSimilarity = get().calculateContentSimilarity(existing.content, entry.content);
+      const similarContent = contentSimilarity > 0.9 && existing.date === entry.date;
+      
+      // Check for identical content regardless of date (possible re-import)
+      const identicalContent = existing.content.trim() === entry.content.trim() && 
+                               existing.title === entry.title;
+      
+      return exactMatch || similarContent || identicalContent;
+    });
+  },
+
+  // Calculate content similarity using simple word overlap
+  calculateContentSimilarity: (content1: string, content2: string): number => {
+    const words1 = content1.toLowerCase().split(/\s+/).filter(word => word.length > 2);
+    const words2 = content2.toLowerCase().split(/\s+/).filter(word => word.length > 2);
+    
+    if (words1.length === 0 || words2.length === 0) return 0;
+    
+    const intersection = words1.filter(word => words2.includes(word));
+    const union = [...new Set([...words1, ...words2])];
+    
+    return intersection.length / union.length;
+  },
+
   addJournalEntry: async (entry: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
+      const state = get();
+      
+      // Check for duplicates before adding
+      if (get().isDuplicateEntry(entry, state.journalEntries)) {
+        get().addNotification({
+          type: 'warning',
+          title: 'Duplicate Entry Detected',
+          message: 'This entry appears to be a duplicate and was not added.'
+        });
+        return;
+      }
+
       const now = new Date();
       const location = get().currentLocation;
       const moonPhase = get().currentMoonPhase;
@@ -122,11 +165,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       const newEntry = {
         title: entry.title || `Entry ${format(now, 'MMM dd, yyyy')}`,
         content: entry.content,
-        date: format(now, 'yyyy-MM-dd'),
+        date: entry.date || format(now, 'yyyy-MM-dd'),
+        time: entry.time,
         mood: entry.mood,
         tags: entry.tags || [],
-        location: location || undefined,
-        moonPhase: moonPhase?.phase,
+        location: entry.location || location || undefined,
+        moonPhase: entry.moonPhase || moonPhase?.phase,
         createdAt: now.toISOString(),
         updatedAt: now.toISOString()
       };
@@ -137,12 +181,23 @@ export const useAppStore = create<AppState>((set, get) => ({
         journalEntries: [{ ...newEntry, id: id.toString() }, ...state.journalEntries]
       }));
 
+      get().addNotification({
+        type: 'success',
+        title: 'Entry Added',
+        message: 'Your journal entry has been saved successfully.'
+      });
+
       // Generate AI insights asynchronously
       if (typeof id === 'number' || typeof id === 'string') {
         get().generateAIInsights({ ...newEntry, id: id.toString() });
       }
     } catch (error) {
       console.error('Error adding journal entry:', error);
+      get().addNotification({
+        type: 'error',
+        title: 'Save Error',
+        message: 'Failed to save journal entry. Please try again.'
+      });
       throw error;
     }
   },
@@ -802,13 +857,24 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  // REAL DATA ONLY: Import individual journal entries with AI analysis and backup creation
+  // REAL DATA ONLY: Import individual journal entries with enhanced duplicate prevention
   importJournalEntries: async (entries: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>[], importSource?: string) => {
     try {
       const importedEntries: JournalEntry[] = [];
+      const skippedDuplicates: number[] = [];
       let backupCount = 0;
       
-      for (const entry of entries) {
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        const state = get();
+        
+        // Check for duplicates using enhanced detection
+        if (get().isDuplicateEntry(entry, state.journalEntries)) {
+          skippedDuplicates.push(i);
+          console.log(`Skipping duplicate entry: ${entry.title || 'Untitled'}`);
+          continue;
+        }
+
         const now = new Date();
         const newEntry = {
           ...entry,
@@ -849,10 +915,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         journalEntries: [...importedEntries, ...state.journalEntries]
       }));
 
+      // Enhanced notification with duplicate information
+      const message = skippedDuplicates.length > 0 
+        ? `${importedEntries.length} entries imported, ${skippedDuplicates.length} duplicates skipped, and ${backupCount} backups created`
+        : `${importedEntries.length} entries imported and ${backupCount} backups created`;
+
       get().addNotification({
-        type: 'success',
-        title: 'Entries Imported',
-        message: `${importedEntries.length} entries imported and ${backupCount} backups created`
+        type: skippedDuplicates.length > 0 ? 'warning' : 'success',
+        title: skippedDuplicates.length > 0 ? 'Import with Duplicates' : 'Entries Imported',
+        message
       });
 
       return importedEntries;

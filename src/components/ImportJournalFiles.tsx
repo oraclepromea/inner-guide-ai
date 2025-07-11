@@ -3,7 +3,7 @@
 // No mock data - all imported entries are analyzed with real AI if configured
 
 import React, { useState, useCallback, useEffect } from 'react';
-import { Upload, AlertCircle, CheckCircle, FileText, Folder, RefreshCw, Trash2, Eye, Brain } from 'lucide-react';
+import { Upload, AlertCircle, CheckCircle, FileText, Folder, RefreshCw, Trash2, Brain } from 'lucide-react';
 import { useAppStore } from '../stores';
 import { db } from '../lib/database';
 import type { JournalEntry, LocationData } from '../types';
