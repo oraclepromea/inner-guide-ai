@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useAppStore } from './stores';
 import { JournalTab } from './components/JournalTab.tsx';
 import { AIInsightsTab } from './components/AIInsightsTab.tsx';
@@ -10,7 +11,34 @@ import { NotificationProvider } from './components/NotificationSystem';
 import './App.css';
 
 function App() {
-  const { activeTab, setActiveTab } = useAppStore();
+  const { 
+    activeTab, 
+    setActiveTab, 
+    getJournalEntries, 
+    getMoodEntries, 
+    getDeepInsights,
+    loadTherapySessions 
+  } = useAppStore();
+
+  // Initialize app data on startup
+  useEffect(() => {
+    const initializeApp = async () => {
+      try {
+        // Load all data from IndexedDB on app startup
+        await Promise.all([
+          getJournalEntries(),
+          getMoodEntries(),
+          getDeepInsights(),
+          loadTherapySessions()
+        ]);
+        console.log('✅ App data loaded from IndexedDB');
+      } catch (error) {
+        console.error('❌ Failed to load app data:', error);
+      }
+    };
+
+    initializeApp();
+  }, [getJournalEntries, getMoodEntries, getDeepInsights, loadTherapySessions]);
 
   const renderActiveTab = () => {
     switch (activeTab) {

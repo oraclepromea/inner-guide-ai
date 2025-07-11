@@ -59,7 +59,7 @@ const getCountryFlag = (countryCode: string): string => {
 };
 
 export const JournalEntryCard: React.FC<JournalEntryCardProps> = ({ entry }) => {
-  const { deleteJournalEntry, updateJournalEntry, generateAIInsights } = useAppStore();
+  const { deleteJournalEntry, updateJournalEntry, generateDeepInsight, setActiveTab } = useAppStore();
   const [isExpanded, setIsExpanded] = useState(false);
   const [showAIInsights, setShowAIInsights] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -96,11 +96,13 @@ export const JournalEntryCard: React.FC<JournalEntryCardProps> = ({ entry }) => 
     
     setIsAnalyzing(true);
     try {
-      await generateAIInsights(entry);
-      setShowAIInsights(true);
+      // Use the generateDeepInsight method from the store instead of generateAIInsights
+      await generateDeepInsight(entry, 'Friend');
+      // Navigate to AI Insights tab after generation
+      setActiveTab('ai-insights');
     } catch (error) {
       console.error('Failed to analyze entry:', error);
-      alert('Failed to analyze entry. Please try again.');
+      alert('Failed to analyze entry. Please check your OpenRouter API configuration in Settings.');
     } finally {
       setIsAnalyzing(false);
     }
@@ -147,16 +149,35 @@ export const JournalEntryCard: React.FC<JournalEntryCardProps> = ({ entry }) => 
     setIsEditing(false);
   };
 
-  // Create three-line preview
-  const getThreeLinePreview = (content: string): string => {
+  // Create three-line preview with proper line counting and character limits
+  const getThreeLinePreview = (content: string): { preview: string; hasMore: boolean } => {
     const lines = content.split('\n');
-    if (lines.length <= 3) {
-      return content;
+    const maxCharsPerLine = 80; // Approximate characters per line
+    
+    if (lines.length <= 3 && content.length <= maxCharsPerLine * 3) {
+      return { preview: content, hasMore: false };
     }
-    return lines.slice(0, 3).join('\n') + '...';
+    
+    // If we have more than 3 lines, take first 3 lines
+    if (lines.length > 3) {
+      return { 
+        preview: lines.slice(0, 3).join('\n'),
+        hasMore: true 
+      };
+    }
+    
+    // If content is too long for 3 lines, truncate it
+    if (content.length > maxCharsPerLine * 3) {
+      return {
+        preview: content.substring(0, maxCharsPerLine * 3).trim() + '...',
+        hasMore: true
+      };
+    }
+    
+    return { preview: content, hasMore: false };
   };
 
-  const previewText = getThreeLinePreview(entry.content);
+  const { preview: previewText, hasMore } = getThreeLinePreview(entry.content);
 
   return (
     <>
@@ -331,15 +352,15 @@ export const JournalEntryCard: React.FC<JournalEntryCardProps> = ({ entry }) => 
                 <button
                   onClick={() => setIsExpanded(!isExpanded)}
                   className="btn-primary px-3 py-2 text-sm flex items-center space-x-2"
-                  title={isExpanded ? 'Collapse' : 'Expand'}
+                  title={isExpanded ? 'Show preview' : 'Show full entry'}
                 >
                   <span>{isExpanded ? '👁️‍🗨️' : '👁️'}</span>
-                  <span className="hidden sm:inline">{isExpanded ? 'Collapse' : 'Expand'}</span>
+                  <span className="hidden sm:inline">{isExpanded ? 'Preview' : 'Full'}</span>
                 </button>
                 
                 <button
                   onClick={() => setIsEditing(true)}
-                  className="bg-green-600/90 hover:bg-green-700 text-white border border-green-500/50 px-3 py-2 text-sm flex items-center space-x-2 rounded-lg transition-colors"
+                  className="btn-secondary px-3 py-2 text-sm flex items-center space-x-2 rounded-lg transition-colors"
                   title="Edit entry"
                 >
                   <Edit className="w-4 h-4" />
@@ -398,6 +419,9 @@ export const JournalEntryCard: React.FC<JournalEntryCardProps> = ({ entry }) => 
           ) : (
             <p className="whitespace-pre-wrap text-slate-200 leading-relaxed">
               {isExpanded ? entry.content : previewText}
+              {hasMore && !isExpanded && (
+                <span className="text-blue-400"> ... (see more)</span>
+              )}
             </p>
           )}
         </div>

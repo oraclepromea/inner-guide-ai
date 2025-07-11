@@ -23,6 +23,20 @@ import type {
 import { db } from '../lib/database';
 import { aiService } from '../lib/aiService';
 
+// Auto-configure OpenRouter API from environment variables
+const initializeAIService = () => {
+  const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
+  if (apiKey && apiKey.trim() !== '') {
+    aiService.configure(apiKey);
+    console.log('✅ OpenRouter API auto-configured from environment');
+  } else {
+    console.warn('⚠️ OpenRouter API key not found in environment variables');
+  }
+};
+
+// Initialize AI service immediately
+initializeAIService();
+
 // REAL DATA ONLY: Store implementation with no mock data
 // All analytics and insights are based on actual user data
 // Mock data has been completely removed from all functions

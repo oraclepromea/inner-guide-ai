@@ -3,9 +3,10 @@
 // No mock data - all imported entries are analyzed with real AI if configured
 
 import React, { useState, useCallback, useEffect } from 'react';
-import { Upload, AlertCircle, CheckCircle, FileText, Folder, RefreshCw, Trash2, Eye } from 'lucide-react';
+import { Upload, AlertCircle, CheckCircle, FileText, Folder, RefreshCw, Trash2, Eye, Brain } from 'lucide-react';
 import { useAppStore } from '../stores';
-import type { JournalEntry } from '../types';
+import { db } from '../lib/database';
+import type { JournalEntry, LocationData } from '../types';
 
 interface ImportResult {
   success: boolean;
@@ -25,7 +26,7 @@ interface LocalCopy {
   checksum: string;
 }
 
-// Enhanced Auto Call backup format interface
+// Enhanced Auto Call backup format interface with comprehensive metadata
 interface AutoCallEntry {
   content?: string;
   text?: string;
@@ -33,21 +34,35 @@ interface AutoCallEntry {
   date?: string;
   created_at?: string;
   timestamp?: string;
+  time?: string;
   title?: string;
   subject?: string;
   mood?: number;
   rating?: number;
   tags?: string[];
+  location?: {
+    city?: string;
+    state?: string;
+    country?: string;
+    latitude?: number;
+    longitude?: number;
+  };
+  city?: string;
+  state?: string;
+  country?: string;
+  weather?: any;
+  moonPhase?: string;
+  moon_phase?: string;
   [key: string]: any;
 }
 
 export const ImportJournalFiles: React.FC = () => {
-  const { importJournalEntries, journalEntries, addNotification } = useAppStore();
+  const { importJournalEntries, journalEntries, addNotification, generateDeepInsight } = useAppStore();
   const [isImporting, setIsImporting] = useState(false);
   const [lastResult, setLastResult] = useState<ImportResult | null>(null);
   const [localCopies, setLocalCopies] = useState<LocalCopy[]>([]);
-  const [selectedCopy, setSelectedCopy] = useState<LocalCopy | null>(null);
   const [showCopyDetails, setShowCopyDetails] = useState(false);
+  const [generatingInsights, setGeneratingInsights] = useState(false);
 
   // Load local copies from localStorage on component mount
   useEffect(() => {
@@ -99,7 +114,7 @@ export const ImportJournalFiles: React.FC = () => {
     );
   }, [localCopies]);
 
-  // Enhanced parsing for Auto Call backup format
+  // Enhanced parsing for Auto Call backup format with comprehensive metadata extraction
   const parseAutoCallBackup = useCallback((jsonData: any): Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>[] => {
     const entries: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>[] = [];
 
@@ -118,6 +133,13 @@ export const ImportJournalFiles: React.FC = () => {
           if (entry) entries.push(entry);
         }
       }
+      // Handle object with data array (another common format)
+      else if (jsonData.data && Array.isArray(jsonData.data)) {
+        for (const item of jsonData.data) {
+          const entry = parseAutoCallEntry(item);
+          if (entry) entries.push(entry);
+        }
+      }
       // Handle single entry object
       else if (jsonData.content || jsonData.text || jsonData.body) {
         const entry = parseAutoCallEntry(jsonData);
@@ -131,8 +153,12 @@ export const ImportJournalFiles: React.FC = () => {
               title: item.title || 'Imported Entry',
               content: item.content,
               date: item.date,
+              time: item.time,
               mood: item.mood || 3,
-              tags: [...(item.tags || []), 'imported']
+              tags: [...(item.tags || []), 'imported'],
+              location: item.location,
+              moonPhase: item.moonPhase,
+              weather: item.weather
             });
           }
         }
@@ -145,7 +171,7 @@ export const ImportJournalFiles: React.FC = () => {
     return entries;
   }, []);
 
-  // Parse individual Auto Call entry
+  // Enhanced parsing for individual Auto Call entry with comprehensive metadata extraction
   const parseAutoCallEntry = useCallback((item: AutoCallEntry): Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'> | null => {
     // Extract content from various possible fields
     const content = item.content || item.text || item.body;
@@ -153,17 +179,25 @@ export const ImportJournalFiles: React.FC = () => {
       return null;
     }
 
-    // Extract date from various possible fields
+    // Extract date and time from various possible fields
     let date = item.date || item.created_at || item.timestamp;
+    let time: string | undefined;
+    
     if (date) {
       // Convert timestamp to date if needed
       if (typeof date === 'number') {
-        date = new Date(date).toISOString().split('T')[0];
+        const dateObj = new Date(date);
+        date = dateObj.toISOString().split('T')[0];
+        time = dateObj.toTimeString().split(' ')[0]; // HH:MM:SS format
       } else if (typeof date === 'string') {
         // Handle various date formats
         const parsedDate = new Date(date);
         if (!isNaN(parsedDate.getTime())) {
           date = parsedDate.toISOString().split('T')[0];
+          // Extract time if it was included in the original date string
+          if (date.includes('T') || item.time) {
+            time = item.time || parsedDate.toTimeString().split(' ')[0];
+          }
         } else {
           date = new Date().toISOString().split('T')[0];
         }
@@ -172,8 +206,36 @@ export const ImportJournalFiles: React.FC = () => {
       date = new Date().toISOString().split('T')[0];
     }
 
+    // Use specific time field if available
+    if (item.time && !time) {
+      time = item.time;
+    }
+
+    // Extract comprehensive location data
+    let location: LocationData | undefined;
+    if (item.location) {
+      // Handle structured location object
+      const loc = item.location;
+      if (loc.city || loc.state || loc.country) {
+        location = {
+          city: loc.city || 'Unknown',
+          country: loc.country || loc.state || 'Unknown',
+          coordinates: (loc.latitude && loc.longitude) ? {
+            lat: loc.latitude,
+            lng: loc.longitude
+          } : undefined
+        };
+      }
+    } else if (item.city || item.state || item.country) {
+      // Handle flat location fields
+      location = {
+        city: item.city || 'Unknown',
+        country: item.country || item.state || 'Unknown'
+      };
+    }
+
     // Extract title
-    const title = item.title || item.subject || 'Auto Call Import';
+    const title = item.title || item.subject || `Auto Call Import - ${date}`;
 
     // Extract mood/rating
     let mood = item.mood || item.rating || 3;
@@ -185,12 +247,22 @@ export const ImportJournalFiles: React.FC = () => {
     const originalTags = Array.isArray(item.tags) ? item.tags : [];
     const tags = [...originalTags, 'auto-call-import'];
 
+    // Extract moon phase
+    const moonPhase = item.moonPhase || item.moon_phase;
+
+    // Extract weather data
+    const weather = item.weather;
+
     return {
       title,
       content: content.trim(),
       date,
+      time,
       mood,
-      tags
+      tags,
+      location,
+      moonPhase,
+      weather
     };
   }, []);
 
@@ -202,7 +274,7 @@ export const ImportJournalFiles: React.FC = () => {
     );
   }, [journalEntries]);
 
-  // Process file content
+  // Enhanced process file with database backup creation and AI insight generation
   const processFile = useCallback(async (file: File): Promise<ImportResult> => {
     const result: ImportResult = {
       success: true,
@@ -229,7 +301,7 @@ export const ImportJournalFiles: React.FC = () => {
         return result;
       }
 
-      // Create or update local copy
+      // Create or update local copy in localStorage
       if (existingCopy) {
         // Update existing copy with new import date
         const updatedCopies = localCopies.map(copy =>
@@ -253,10 +325,44 @@ export const ImportJournalFiles: React.FC = () => {
         return true;
       });
 
-      // Import new entries
+      // Import new entries with comprehensive metadata
       if (newEntries.length > 0) {
-        await importJournalEntries(newEntries, `Import from ${file.name}`);
+        console.log(`Importing ${newEntries.length} entries with metadata:`, {
+          sampleEntry: newEntries[0],
+          totalEntries: newEntries.length
+        });
+
+        // Import entries and get the created entries back
+        const importedEntries = await importJournalEntries(newEntries, `Import from ${file.name}`);
         result.entriesImported = newEntries.length;
+
+        // Create database backups for each imported entry using direct database access
+        try {
+          for (const entry of newEntries) {
+            const now = new Date().toISOString();
+            const backupEntry = {
+              ...entry,
+              originalImportDate: now,
+              importSource: `File: ${file.name}`,
+              importMethod: 'manual' as const,
+              originalFileName: file.name,
+              createdAt: now,
+              updatedAt: now
+            };
+            await db.importedJournalBackups.add(backupEntry);
+          }
+          console.log(`Created ${newEntries.length} database backup entries`);
+        } catch (backupError) {
+          console.error('Failed to create database backups:', backupError);
+          // Don't fail the import if backup creation fails
+        }
+
+        // Generate AI insights for imported entries asynchronously
+        if (importedEntries && importedEntries.length > 0) {
+          setGeneratingInsights(true);
+          // Don't await this - let it run in background
+          generateAIInsightsForEntries(importedEntries, file.name);
+        }
       }
 
     } catch (error) {
@@ -268,7 +374,43 @@ export const ImportJournalFiles: React.FC = () => {
     return result;
   }, [parseAutoCallBackup, isDuplicate, importJournalEntries, generateChecksum, findExistingCopy, localCopies, saveLocalCopies, createLocalCopy]);
 
-  // Re-import from local copy
+  // Generate AI insights for imported entries
+  const generateAIInsightsForEntries = useCallback(async (entries: JournalEntry[], fileName: string) => {
+    let successCount = 0;
+    let errorCount = 0;
+
+    try {
+      for (const entry of entries) {
+        try {
+          await generateDeepInsight(entry, 'Friend');
+          successCount++;
+          
+          // Small delay to avoid rate limits
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch (error) {
+          console.error(`Failed to generate insight for entry ${entry.id}:`, error);
+          errorCount++;
+        }
+      }
+
+      addNotification({
+        type: successCount > 0 ? 'success' : 'warning',
+        title: 'AI Insights Generated',
+        message: `Generated ${successCount} AI insights for imported entries from ${fileName}${errorCount > 0 ? ` (${errorCount} failed)` : ''}`
+      });
+    } catch (error) {
+      console.error('Failed to generate AI insights:', error);
+      addNotification({
+        type: 'warning',
+        title: 'AI Insights Incomplete',
+        message: 'Some AI insights could not be generated. You can generate them manually later.'
+      });
+    } finally {
+      setGeneratingInsights(false);
+    }
+  }, [generateDeepInsight, addNotification]);
+
+  // Enhanced re-import with AI insight generation
   const reImportFromLocalCopy = useCallback(async (copy: LocalCopy) => {
     setIsImporting(true);
     try {
@@ -278,7 +420,7 @@ export const ImportJournalFiles: React.FC = () => {
       const newEntries = parsedEntries.filter(entry => !isDuplicate(entry));
       
       if (newEntries.length > 0) {
-        await importJournalEntries(newEntries, `Re-import from ${copy.fileName}`);
+        const importedEntries = await importJournalEntries(newEntries, `Re-import from ${copy.fileName}`);
         
         // Update local copy with new import date
         const updatedCopies = localCopies.map(c =>
@@ -288,10 +430,35 @@ export const ImportJournalFiles: React.FC = () => {
         );
         saveLocalCopies(updatedCopies);
         
+        // Create database backups for re-imported entries using direct database access
+        try {
+          for (const entry of newEntries) {
+            const now = new Date().toISOString();
+            const backupEntry = {
+              ...entry,
+              originalImportDate: now,
+              importSource: `Re-import from: ${copy.fileName}`,
+              importMethod: 'manual' as const,
+              originalFileName: copy.fileName,
+              createdAt: now,
+              updatedAt: now
+            };
+            await db.importedJournalBackups.add(backupEntry);
+          }
+        } catch (backupError) {
+          console.error('Failed to create database backups for re-import:', backupError);
+        }
+        
+        // Generate AI insights for re-imported entries
+        if (importedEntries && importedEntries.length > 0) {
+          setGeneratingInsights(true);
+          generateAIInsightsForEntries(importedEntries, copy.fileName);
+        }
+        
         addNotification({
           type: 'success',
           title: 'Re-import Successful',
-          message: `Re-imported ${newEntries.length} entries from ${copy.fileName}`
+          message: `Re-imported ${newEntries.length} entries from ${copy.fileName} with full metadata and AI insights`
         });
       } else {
         addNotification({
@@ -310,7 +477,7 @@ export const ImportJournalFiles: React.FC = () => {
     } finally {
       setIsImporting(false);
     }
-  }, [parseAutoCallBackup, isDuplicate, importJournalEntries, localCopies, saveLocalCopies, addNotification]);
+  }, [parseAutoCallBackup, isDuplicate, importJournalEntries, localCopies, saveLocalCopies, addNotification, generateAIInsightsForEntries]);
 
   // Delete local copy
   const deleteLocalCopy = useCallback((copyId: string) => {
@@ -461,13 +628,6 @@ export const ImportJournalFiles: React.FC = () => {
                     </div>
                     <div className="flex items-center space-x-2">
                       <button
-                        onClick={() => setSelectedCopy(copy)}
-                        className="p-2 text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                        title="View details"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
-                      <button
                         onClick={() => reImportFromLocalCopy(copy)}
                         disabled={isImporting}
                         className="p-2 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 disabled:opacity-50"
@@ -502,13 +662,14 @@ export const ImportJournalFiles: React.FC = () => {
             <div className="flex items-start space-x-3">
               <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
               <div className="text-sm text-blue-700 dark:text-blue-300">
-                <p className="font-medium mb-1">Auto Call Backup Format Supported</p>
-                <p>Files are automatically saved as local copies that can be referenced and re-imported:</p>
+                <p className="font-medium mb-1">Enhanced Import with Full Metadata Support</p>
+                <p>Comprehensive data extraction and processing:</p>
                 <ul className="list-disc list-inside mt-2 space-y-1">
-                  <li>Local copies are stored for easy re-import</li>
-                  <li>Duplicate detection prevents re-importing same entries</li>
-                  <li>Original file format is preserved</li>
-                  <li>Auto-tagged with "auto-call-import" for tracking</li>
+                  <li><strong>Metadata:</strong> Date, time, location (city, state, country), moon phase, weather</li>
+                  <li><strong>Backups:</strong> Local copies saved both in browser storage and database</li>
+                  <li><strong>AI Analysis:</strong> Automatic deep insight generation for each imported entry</li>
+                  <li><strong>Duplicate Prevention:</strong> Smart detection prevents re-importing same entries</li>
+                  <li><strong>Format Support:</strong> Auto Call, Inner Guide, and various JSON structures</li>
                 </ul>
               </div>
             </div>
@@ -586,6 +747,17 @@ export const ImportJournalFiles: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* AI Insights Generation Status */}
+      {generatingInsights && (
+        <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
+          <div className="flex items-center space-x-3">
+            <Brain className="w-5 h-5 text-purple-600 dark:text-purple-400 animate-pulse" />
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-purple-600"></div>
+            <span className="text-purple-700 dark:text-purple-300">Generating AI insights for imported entries...</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
