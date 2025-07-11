@@ -1,5 +1,5 @@
 // Core data types
-export type TabType = 'journal' | 'mood' | 'analytics' | 'therapy' | 'settings';
+export type TabType = 'journal' | 'ai-insights' | 'analytics' | 'therapy' | 'settings';
 
 // Therapy-related types
 export type TherapistPersonality = 'empathetic' | 'analytical' | 'supportive' | 'direct';
@@ -65,29 +65,49 @@ export interface MoonPhaseData {
 }
 
 // AI Insights type
-export interface EnhancedAIInsights {
+export interface AIAnalysisResult {
   sentiment: {
     score: number;
     label: 'positive' | 'negative' | 'neutral';
     confidence: number;
-    emotions: Array<{ name: string; intensity: number }>;
   };
   themes: string[];
   suggestions: string[];
   reflectionPrompts: string[];
-  writingPatterns: {
-    complexity: 'simple' | 'moderate' | 'complex';
-    tone: string;
-    keyPhrases: string[];
-    wordCount: number;
-    readingLevel: string;
+}
+
+// Enhanced Deep AI Insights type
+export interface DeepAIInsight {
+  id: string;
+  journalEntryId: string;
+  primaryEmotion: string;
+  intensity: number; // 1-10 scale
+  energy: 'very low' | 'low' | 'moderate' | 'high' | 'very high';
+  compassionateReflection: string;
+  keyInsights: string[];
+  reflectionQuestions: string[];
+  spiritualQuote: {
+    text: string;
+    author: string;
+    relevance: string;
   };
-  personalizedInsights: {
-    recommendations: string[];
-    trends: string[];
-    concerns: string[];
-  };
+  themes: string[];
+  healingGuidance: string;
+  shadowWork: string;
+  lightWork: string;
+  confidence: number;
   createdAt: string;
+  // Metadata linked to original journal entry
+  originalEntry: {
+    date: string;
+    time?: string;
+    location?: {
+      city: string;
+      country: string;
+    };
+    moonPhase?: string;
+    content: string;
+  };
 }
 
 // Validation types
@@ -303,7 +323,7 @@ export interface Achievement {
 
 // UI State types
 export interface TabState {
-  activeTab: 'journal' | 'mood' | 'analytics' | 'therapy' | 'settings';
+  activeTab: 'journal' | 'ai-insights' | 'analytics' | 'therapy' | 'settings';
   journalView: 'list' | 'calendar' | 'timeline';
   moodView: 'chart' | 'calendar' | 'stats';
   analyticsView: 'overview' | 'trends' | 'insights';
@@ -581,6 +601,7 @@ export interface AppState {
   // Data
   journalEntries: JournalEntry[];
   moodEntries: MoodEntry[];
+  deepInsights: DeepAIInsight[]; // Added for AI insights
   settings: AppSettings;
   preferences: UserPreferences;
   notifications: NotificationState[];
@@ -617,6 +638,11 @@ export interface AppState {
   deleteMoodEntry: (id: string) => Promise<void>;
   getMoodEntries: () => Promise<void>;
   
+  // Deep AI Insights actions
+  generateDeepInsight: (entry: JournalEntry, userName?: string) => Promise<void>;
+  getDeepInsights: () => Promise<void>;
+  deleteDeepInsight: (id: string) => Promise<void>;
+  
   updateSettings: (settings: Partial<AppSettings>) => Promise<void>;
   updatePreferences: (preferences: Partial<UserPreferences>) => Promise<void>;
   
@@ -647,22 +673,4 @@ export interface AppState {
   importData: (data: string) => Promise<void>;
   importJournalEntries: (entries: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>[], importSource?: string) => Promise<JournalEntry[]>;
   clearAllData: () => Promise<void>;
-}
-
-export interface AIAnalysisResult {
-  sentiment: {
-    score: number;
-    label: 'positive' | 'negative' | 'neutral';
-    confidence: number;
-  };
-  themes: string[];
-  suggestions: string[];
-  reflectionPrompts: string[];
-}
-
-export interface ChatMessage {
-  id: string;
-  content: string;
-  role: 'user' | 'assistant';
-  timestamp: string;
 }

@@ -1,6 +1,6 @@
 import { useAppStore } from './stores';
 import { JournalTab } from './components/JournalTab.tsx';
-import { MoodTab } from './components/MoodTab.tsx';
+import { AIInsightsTab } from './components/AIInsightsTab.tsx';
 import { Analytics } from './components/Analytics.tsx';
 import { SettingsTab } from './components/SettingsTab.tsx';
 import TherapyTab from './components/TherapyTab.tsx';
@@ -16,8 +16,8 @@ function App() {
     switch (activeTab) {
       case 'journal':
         return <JournalTab />;
-      case 'mood':
-        return <MoodTab />;
+      case 'ai-insights':
+        return <AIInsightsTab />;
       case 'analytics':
         return <Analytics />;
       case 'therapy':

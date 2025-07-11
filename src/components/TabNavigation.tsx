@@ -1,5 +1,5 @@
 import React from 'react';
-import { BookOpen, Heart, BarChart3, Settings, MessageCircle } from 'lucide-react';
+import { BookOpen, Brain, BarChart3, MessageCircle, Settings } from 'lucide-react';
 import { useAppStore } from '../stores';
 import type { TabType } from '../types';
 
@@ -9,7 +9,7 @@ interface TabNavigationProps {
 }
 
 export const TabNavigation: React.FC<TabNavigationProps> = ({ activeTab, onTabChange }) => {
-  const { journalEntries, moodEntries, therapySessions } = useAppStore();
+  const { journalEntries, therapySessions } = useAppStore();
 
   const tabs = [
     {
@@ -20,18 +20,11 @@ export const TabNavigation: React.FC<TabNavigationProps> = ({ activeTab, onTabCh
       gradient: 'from-purple-500 to-violet-500',
     },
     {
-      id: 'mood' as TabType,
-      label: 'Mood',
-      icon: Heart,
-      count: moodEntries.length,
+      id: 'ai-insights' as TabType,
+      label: 'AI Insights',
+      icon: Brain,
+      count: null,
       gradient: 'from-pink-500 to-rose-500',
-    },
-    {
-      id: 'therapy' as TabType,
-      label: 'Therapy',
-      icon: MessageCircle,
-      count: therapySessions?.length || 0,
-      gradient: 'from-emerald-500 to-teal-500',
     },
     {
       id: 'analytics' as TabType,
@@ -39,6 +32,13 @@ export const TabNavigation: React.FC<TabNavigationProps> = ({ activeTab, onTabCh
       icon: BarChart3,
       count: null,
       gradient: 'from-blue-500 to-indigo-500',
+    },
+    {
+      id: 'therapy' as TabType,
+      label: 'Therapy',
+      icon: MessageCircle,
+      count: therapySessions?.length || 0,
+      gradient: 'from-emerald-500 to-teal-500',
     },
     {
       id: 'settings' as TabType,

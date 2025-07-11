@@ -4,48 +4,53 @@ import type {
   MoodEntry, 
   AppSettings, 
   UserPreferences, 
-  Achievement,
   TherapySession,
   TherapyMessage,
-  PersonalGrowthProfile,
-  TherapyGoal,
-  ChatMessage
+  DeepAIInsight
 } from '../types';
 
 // New interface for backup entries
-export interface ImportedJournalBackup extends JournalEntry {
+export interface ImportedJournalBackup extends Omit<JournalEntry, 'id'> {
+  id?: number;
   originalImportDate: string;
   importSource: string;
-  importMethod: 'manual' | 'auto';
+  importMethod: 'auto' | 'manual';
   originalFileName?: string;
-  checksum?: string;
 }
 
-export class InnerGuideDB extends Dexie {
+export class InnerGuideDatabase extends Dexie {
   journalEntries!: Table<JournalEntry>;
   moodEntries!: Table<MoodEntry>;
-  settings!: Table<AppSettings>;
-  userPreferences!: Table<UserPreferences>;
-  achievements!: Table<Achievement>;
+  deepInsights!: Table<DeepAIInsight>; // Added for AI insights
   therapySessions!: Table<TherapySession>;
   therapyMessages!: Table<TherapyMessage>;
-  personalGrowthProfile!: Table<PersonalGrowthProfile>;
-  therapyGoals!: Table<TherapyGoal>;
+  settings!: Table<AppSettings>;
+  userPreferences!: Table<UserPreferences>;
   importedJournalBackups!: Table<ImportedJournalBackup>;
 
   constructor() {
-    super('InnerGuideDB');
-    this.version(4).stores({
-      journalEntries: '++id, date, createdAt, updatedAt, tags',
-      moodEntries: '++id, date, createdAt, updatedAt, mood',
+    super('InnerGuideDatabase');
+    
+    this.version(1).stores({
+      journalEntries: '++id, date, createdAt, mood, [date+mood]',
+      moodEntries: '++id, date, createdAt, mood',
+      therapySessions: '++id, date, createdAt',
+      therapyMessages: '++id, sessionId, timestamp, sender',
       settings: '++id',
       userPreferences: '++id',
-      achievements: '++id, type, unlockedAt',
-      therapySessions: '++id, createdAt, updatedAt, therapistPersonality',
-      therapyMessages: '++id, sessionId, sender, timestamp, type',
-      personalGrowthProfile: '++userId, updatedAt',
-      therapyGoals: '++id, category, targetDate, progress, createdAt',
-      importedJournalBackups: '++id, originalImportDate, importSource, importMethod, date, createdAt, updatedAt, tags, checksum'
+      importedJournalBackups: '++id, originalImportDate, importSource, date, createdAt'
+    });
+
+    // Version 2: Add deep insights table
+    this.version(2).stores({
+      journalEntries: '++id, date, createdAt, mood, [date+mood]',
+      moodEntries: '++id, date, createdAt, mood',
+      deepInsights: '++id, journalEntryId, createdAt, primaryEmotion, intensity', // New table
+      therapySessions: '++id, date, createdAt',
+      therapyMessages: '++id, sessionId, timestamp, sender',
+      settings: '++id',
+      userPreferences: '++id',
+      importedJournalBackups: '++id, originalImportDate, importSource, date, createdAt'
     });
 
     this.journalEntries.hook('creating', (_primKey: any, obj: any, _trans: any) => {
@@ -85,19 +90,6 @@ export class InnerGuideDB extends Dexie {
       if (!obj.tags) obj.tags = [];
     });
 
-    this.therapyGoals.hook('creating', (_primKey: any, obj: any, _trans: any) => {
-      const now = new Date().toISOString();
-      obj.createdAt = now;
-      obj.updatedAt = now;
-      if (!obj.milestones) obj.milestones = [];
-      if (!obj.strategies) obj.strategies = [];
-      if (!obj.obstacles) obj.obstacles = [];
-    });
-
-    this.therapyGoals.hook('updating', (modifications: any, _primKey: any, _obj: any, _trans: any) => {
-      modifications.updatedAt = new Date().toISOString();
-    });
-
     // Add backup table hooks
     this.importedJournalBackups.hook('creating', (_primKey: any, obj: any, _trans: any) => {
       const now = new Date().toISOString();
@@ -133,7 +125,7 @@ export class InnerGuideDB extends Dexie {
   }
 }
 
-export const db = new InnerGuideDB();
+export const db = new InnerGuideDatabase();
 
 // Enhanced database utilities with caching
 class DatabaseCache {
@@ -387,7 +379,7 @@ export const dbOperations = {
 
     try {
       const sessions = await db.therapySessions
-        .orderBy('startTime')
+        .orderBy('createdAt')
         .reverse()
         .offset(offset)
         .limit(limit)
@@ -466,16 +458,9 @@ export const dbOperations = {
     }
   },
 
-  async addChatMessage(message: Omit<ChatMessage, 'id'>) {
+  async addChatMessage(message: Omit<TherapyMessage, 'id'>) {
     try {
-      // Since chatMessages table doesn't exist, we'll use therapyMessages instead
-      const therapyMessage: Omit<TherapyMessage, 'id'> = {
-        content: message.content,
-        sender: message.role === 'user' ? 'user' : 'therapist',
-        timestamp: message.timestamp,
-        type: 'text'
-      };
-      const id = await db.therapyMessages.add(therapyMessage as any);
+      const id = await db.therapyMessages.add(message as any);
       dbCache.clear();
       return { ...message, id: id.toString() };
     } catch (error) {
@@ -495,141 +480,51 @@ export const dbOperations = {
         .equals(parseInt(sessionId))
         .sortBy('timestamp');
       
-      // Convert to ChatMessage format
-      const chatMessages = messages.map(msg => ({
-        id: msg.id?.toString() || '',
-        content: msg.content,
-        role: msg.sender === 'user' ? 'user' : 'assistant',
-        timestamp: msg.timestamp
-      }));
-      
-      dbCache.set(cacheKey, chatMessages, 1 * 60 * 1000);
-      return chatMessages;
+      dbCache.set(cacheKey, messages, 1 * 60 * 1000);
+      return messages;
     } catch (error) {
       console.error('Error fetching chat messages:', error);
       throw new Error('Failed to load chat messages');
     }
   },
 
-  async getPersonalGrowthProfile(userId: string = 'default') {
-    const cacheKey = `growth_profile_${userId}`;
-    const cached = dbCache.get(cacheKey);
-    if (cached) return cached;
-
-    try {
-      let profile = await db.personalGrowthProfile
-        .where('userId')
-        .equals(userId)
-        .first();
-
-      if (!profile) {
-        // Create default profile
-        profile = {
-          userId,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          emotionalPatterns: {
-            frequency: {},
-            weeklyVariation: {},
-            monthlyTrends: {}
-          },
-          recurringThemes: {
-            topics: [],
-            positive: [],
-            challenges: [],
-            relationships: [],
-            work: [],
-            health: []
-          },
-          progressMetrics: {
-            resilience: 0,
-            selfAwareness: 0,
-            emotionalRange: 0,
-            copingEffectiveness: 0,
-            communicationSkills: 0,
-            stressManagement: 0
-          },
-          conversationInsights: {
-            totalSessions: 0,
-            averageSessionLength: 0,
-            preferredTopics: [],
-            mostHelpfulInterventions: [],
-            growthAreas: []
-          },
-          goalTracking: {
-            activeGoals: [],
-            completedGoals: [],
-            goalAchievementRate: 0
-          }
-        };
-        
-        await db.personalGrowthProfile.add(profile);
-      }
-      
-      dbCache.set(cacheKey, profile, 5 * 60 * 1000);
-      return profile;
-    } catch (error) {
-      console.error('Error fetching growth profile:', error);
-      throw new Error('Failed to load personal growth profile');
-    }
+  async getPersonalGrowthProfile(_userId: string = 'default') {
+    // This feature is not yet implemented
+    // Return a basic profile structure for future use
+    return {
+      userId: _userId,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      emotionalPatterns: { frequency: {}, weeklyVariation: {}, monthlyTrends: {} },
+      recurringThemes: { topics: [], positive: [], challenges: [], relationships: [], work: [], health: [] },
+      progressMetrics: { resilience: 0, selfAwareness: 0, emotionalRange: 0, copingEffectiveness: 0, communicationSkills: 0, stressManagement: 0 },
+      conversationInsights: { totalSessions: 0, averageSessionLength: 0, preferredTopics: [], mostHelpfulInterventions: [], growthAreas: [] },
+      goalTracking: { activeGoals: [], completedGoals: [], goalAchievementRate: 0 }
+    };
   },
 
-  async updatePersonalGrowthProfile(userId: string, updates: Partial<PersonalGrowthProfile>) {
-    try {
-      await db.personalGrowthProfile
-        .where('userId')
-        .equals(userId)
-        .modify({ ...updates, updatedAt: new Date().toISOString() });
-      
-      dbCache.delete(`growth_profile_${userId}`);
-      return await this.getPersonalGrowthProfile(userId);
-    } catch (error) {
-      console.error('Error updating growth profile:', error);
-      throw new Error('Failed to update personal growth profile');
-    }
+  async updatePersonalGrowthProfile(_userId: string, _updates: any) {
+    // This feature is not yet implemented
+    console.log('Personal growth profile update not yet implemented');
+    return null;
   },
 
-  async getTherapyGoals(category?: string) {
-    const cacheKey = `therapy_goals_${category || 'all'}`;
-    const cached = dbCache.get(cacheKey);
-    if (cached) return cached;
-
-    try {
-      let query = db.therapyGoals.orderBy('createdAt').reverse();
-      
-      if (category) {
-        query = db.therapyGoals.where('category').equals(category);
-      }
-      
-      const goals = await query.toArray();
-      dbCache.set(cacheKey, goals, 2 * 60 * 1000);
-      return goals;
-    } catch (error) {
-      console.error('Error fetching therapy goals:', error);
-      throw new Error('Failed to load therapy goals');
-    }
+  async getTherapyGoals(_category?: string) {
+    // This feature is not yet implemented
+    // Return empty array for now
+    return [];
   },
 
-  async addTherapyGoal(goal: Omit<TherapyGoal, 'id'>) {
-    try {
-      const id = await db.therapyGoals.add(goal);
-      dbCache.clear();
-      return { ...goal, id };
-    } catch (error) {
-      console.error('Error adding therapy goal:', error);
-      throw new Error('Failed to add therapy goal');
-    }
+  async addTherapyGoal(_goal: any) {
+    // This feature is not yet implemented
+    console.log('Therapy goals not yet implemented');
+    return null;
   },
 
-  async updateTherapyGoal(id: string, updates: Partial<TherapyGoal>) {
-    try {
-      await db.therapyGoals.update(id, updates);
-      dbCache.clear();
-      return await db.therapyGoals.get(id);
-    } catch (error) {
-      console.error('Error updating therapy goal:', error);
-      throw new Error('Failed to update therapy goal');
-    }
+  async updateTherapyGoal(_id: string, _updates: any) {
+    // This feature is not yet implemented
+    console.log('Therapy goal updates not yet implemented');
+    return null;
   },
 
   // Imported Journal Backup operations

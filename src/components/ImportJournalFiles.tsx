@@ -1,9 +1,9 @@
-// REAL DATA ONLY: Manual Journal File Import Component
+// REAL DATA ONLY: Enhanced Journal File Import Component with Local Copy Management
+// Creates and maintains local copies of imported files for reference and re-import
 // No mock data - all imported entries are analyzed with real AI if configured
-// Automatically triggers AI analysis for imported journal entries
 
-import React, { useState, useCallback } from 'react';
-import { Upload, AlertCircle, CheckCircle, FileText } from 'lucide-react';
+import React, { useState, useCallback, useEffect } from 'react';
+import { Upload, AlertCircle, CheckCircle, FileText, Folder, RefreshCw, Trash2, Eye } from 'lucide-react';
 import { useAppStore } from '../stores';
 import type { JournalEntry } from '../types';
 
@@ -12,6 +12,17 @@ interface ImportResult {
   entriesImported: number;
   duplicatesSkipped: number;
   errors: string[];
+}
+
+interface LocalCopy {
+  id: string;
+  fileName: string;
+  originalSize: number;
+  importDate: string;
+  entriesCount: number;
+  lastImportDate?: string;
+  fileContent: string;
+  checksum: string;
 }
 
 // Enhanced Auto Call backup format interface
@@ -34,6 +45,59 @@ export const ImportJournalFiles: React.FC = () => {
   const { importJournalEntries, journalEntries, addNotification } = useAppStore();
   const [isImporting, setIsImporting] = useState(false);
   const [lastResult, setLastResult] = useState<ImportResult | null>(null);
+  const [localCopies, setLocalCopies] = useState<LocalCopy[]>([]);
+  const [selectedCopy, setSelectedCopy] = useState<LocalCopy | null>(null);
+  const [showCopyDetails, setShowCopyDetails] = useState(false);
+
+  // Load local copies from localStorage on component mount
+  useEffect(() => {
+    const stored = localStorage.getItem('journal-import-local-copies');
+    if (stored) {
+      try {
+        setLocalCopies(JSON.parse(stored));
+      } catch (error) {
+        console.error('Failed to load local copies:', error);
+      }
+    }
+  }, []);
+
+  // Save local copies to localStorage
+  const saveLocalCopies = useCallback((copies: LocalCopy[]) => {
+    localStorage.setItem('journal-import-local-copies', JSON.stringify(copies));
+    setLocalCopies(copies);
+  }, []);
+
+  // Generate checksum for file content
+  const generateChecksum = useCallback((content: string): string => {
+    let hash = 0;
+    for (let i = 0; i < content.length; i++) {
+      const char = content.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    return Math.abs(hash).toString(36);
+  }, []);
+
+  // Create local copy of imported file
+  const createLocalCopy = useCallback((file: File, content: string, entriesCount: number): LocalCopy => {
+    const copy: LocalCopy = {
+      id: crypto.randomUUID(),
+      fileName: file.name,
+      originalSize: file.size,
+      importDate: new Date().toISOString(),
+      entriesCount,
+      fileContent: content,
+      checksum: generateChecksum(content)
+    };
+    return copy;
+  }, [generateChecksum]);
+
+  // Check if local copy already exists
+  const findExistingCopy = useCallback((fileName: string, checksum: string): LocalCopy | undefined => {
+    return localCopies.find(copy => 
+      copy.fileName === fileName && copy.checksum === checksum
+    );
+  }, [localCopies]);
 
   // Enhanced parsing for Auto Call backup format
   const parseAutoCallBackup = useCallback((jsonData: any): Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>[] => {
@@ -149,6 +213,11 @@ export const ImportJournalFiles: React.FC = () => {
 
     try {
       const content = await file.text();
+      const checksum = generateChecksum(content);
+      
+      // Check if we already have this file as a local copy
+      const existingCopy = findExistingCopy(file.name, checksum);
+      
       const jsonData = JSON.parse(content);
       
       // Parse entries based on format
@@ -158,6 +227,21 @@ export const ImportJournalFiles: React.FC = () => {
         result.errors.push('No valid journal entries found in file');
         result.success = false;
         return result;
+      }
+
+      // Create or update local copy
+      if (existingCopy) {
+        // Update existing copy with new import date
+        const updatedCopies = localCopies.map(copy =>
+          copy.id === existingCopy.id
+            ? { ...copy, lastImportDate: new Date().toISOString() }
+            : copy
+        );
+        saveLocalCopies(updatedCopies);
+      } else {
+        // Create new local copy
+        const newCopy = createLocalCopy(file, content, parsedEntries.length);
+        saveLocalCopies([...localCopies, newCopy]);
       }
 
       // Filter out duplicates
@@ -182,7 +266,64 @@ export const ImportJournalFiles: React.FC = () => {
     }
 
     return result;
-  }, [parseAutoCallBackup, isDuplicate, importJournalEntries]);
+  }, [parseAutoCallBackup, isDuplicate, importJournalEntries, generateChecksum, findExistingCopy, localCopies, saveLocalCopies, createLocalCopy]);
+
+  // Re-import from local copy
+  const reImportFromLocalCopy = useCallback(async (copy: LocalCopy) => {
+    setIsImporting(true);
+    try {
+      const jsonData = JSON.parse(copy.fileContent);
+      const parsedEntries = parseAutoCallBackup(jsonData);
+      
+      const newEntries = parsedEntries.filter(entry => !isDuplicate(entry));
+      
+      if (newEntries.length > 0) {
+        await importJournalEntries(newEntries, `Re-import from ${copy.fileName}`);
+        
+        // Update local copy with new import date
+        const updatedCopies = localCopies.map(c =>
+          c.id === copy.id
+            ? { ...c, lastImportDate: new Date().toISOString() }
+            : c
+        );
+        saveLocalCopies(updatedCopies);
+        
+        addNotification({
+          type: 'success',
+          title: 'Re-import Successful',
+          message: `Re-imported ${newEntries.length} entries from ${copy.fileName}`
+        });
+      } else {
+        addNotification({
+          type: 'info',
+          title: 'No New Entries',
+          message: 'All entries from this file are already imported'
+        });
+      }
+    } catch (error) {
+      console.error('Re-import failed:', error);
+      addNotification({
+        type: 'error',
+        title: 'Re-import Failed',
+        message: error instanceof Error ? error.message : 'Unknown error occurred'
+      });
+    } finally {
+      setIsImporting(false);
+    }
+  }, [parseAutoCallBackup, isDuplicate, importJournalEntries, localCopies, saveLocalCopies, addNotification]);
+
+  // Delete local copy
+  const deleteLocalCopy = useCallback((copyId: string) => {
+    if (window.confirm('Are you sure you want to delete this local copy?')) {
+      const updatedCopies = localCopies.filter(copy => copy.id !== copyId);
+      saveLocalCopies(updatedCopies);
+      addNotification({
+        type: 'success',
+        title: 'Local Copy Deleted',
+        message: 'The local copy has been removed'
+      });
+    }
+  }, [localCopies, saveLocalCopies, addNotification]);
 
   // Handle file selection and import
   const handleFileImport = useCallback(async (files: FileList | File[]) => {
@@ -220,7 +361,7 @@ export const ImportJournalFiles: React.FC = () => {
         addNotification({
           type: 'success',
           title: 'Import Successful',
-          message: `Imported ${combinedResult.entriesImported} entries. ${combinedResult.duplicatesSkipped} duplicates skipped.`
+          message: `Imported ${combinedResult.entriesImported} entries. Local copies saved for reference.`
         });
       } else if (combinedResult.entriesImported > 0) {
         addNotification({
@@ -279,15 +420,81 @@ export const ImportJournalFiles: React.FC = () => {
     if (files && files.length > 0) {
       handleFileImport(files);
     }
-    // Reset input
     e.target.value = '';
   }, [handleFileImport]);
 
   return (
     <div className="space-y-6">
+      {/* Local Copies Management */}
+      {localCopies.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center">
+              <Folder className="w-5 h-5 mr-2" />
+              Local Copies ({localCopies.length})
+            </h3>
+            <button
+              onClick={() => setShowCopyDetails(!showCopyDetails)}
+              className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+            >
+              {showCopyDetails ? 'Hide' : 'Show'} Details
+            </button>
+          </div>
+
+          {showCopyDetails && (
+            <div className="space-y-3">
+              {localCopies.map((copy) => (
+                <div key={copy.id} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-2">
+                        <FileText className="w-4 h-4 text-gray-500" />
+                        <span className="font-medium text-gray-900 dark:text-gray-100">{copy.fileName}</span>
+                      </div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        {copy.entriesCount} entries • {(copy.originalSize / 1024).toFixed(1)} KB • 
+                        Added {new Date(copy.importDate).toLocaleDateString()}
+                        {copy.lastImportDate && (
+                          <span> • Last re-import {new Date(copy.lastImportDate).toLocaleDateString()}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => setSelectedCopy(copy)}
+                        className="p-2 text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                        title="View details"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => reImportFromLocalCopy(copy)}
+                        disabled={isImporting}
+                        className="p-2 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 disabled:opacity-50"
+                        title="Re-import from this copy"
+                      >
+                        <RefreshCw className={`w-4 h-4 ${isImporting ? 'animate-spin' : ''}`} />
+                      </button>
+                      <button
+                        onClick={() => deleteLocalCopy(copy.id)}
+                        className="p-2 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                        title="Delete local copy"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Main Import Section */}
       <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm border border-gray-200 dark:border-gray-700">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-          Import Auto Call Journal Backups
+          Import Journal Files
         </h3>
         
         <div className="space-y-4">
@@ -296,12 +503,12 @@ export const ImportJournalFiles: React.FC = () => {
               <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
               <div className="text-sm text-blue-700 dark:text-blue-300">
                 <p className="font-medium mb-1">Auto Call Backup Format Supported</p>
-                <p>This importer can handle your Auto Call journal backup files. It will automatically:</p>
+                <p>Files are automatically saved as local copies that can be referenced and re-imported:</p>
                 <ul className="list-disc list-inside mt-2 space-y-1">
-                  <li>Parse the backup JSON format</li>
-                  <li>Extract journal entries, dates, and metadata</li>
-                  <li>Skip duplicate entries</li>
-                  <li>Add "auto-call-import" tags for tracking</li>
+                  <li>Local copies are stored for easy re-import</li>
+                  <li>Duplicate detection prevents re-importing same entries</li>
+                  <li>Original file format is preserved</li>
+                  <li>Auto-tagged with "auto-call-import" for tracking</li>
                 </ul>
               </div>
             </div>
@@ -315,10 +522,10 @@ export const ImportJournalFiles: React.FC = () => {
           >
             <Upload className="h-12 w-12 text-gray-400 mx-auto mb-4" />
             <p className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Drop Auto Call backup files here
+              Drop journal backup files here
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-              Or click to select JSON backup files
+              Or click to select JSON backup files (local copies will be created)
             </p>
             <label className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors">
               <Upload className="h-4 w-4 mr-2" />
@@ -338,7 +545,7 @@ export const ImportJournalFiles: React.FC = () => {
             <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
               <div className="flex items-center space-x-3">
                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-                <span className="text-blue-700 dark:text-blue-300">Processing backup files...</span>
+                <span className="text-blue-700 dark:text-blue-300">Processing backup files and creating local copies...</span>
               </div>
             </div>
           )}

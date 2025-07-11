@@ -32,6 +32,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Initial state
   journalEntries: [],
   moodEntries: [],
+  deepInsights: [], // Added for AI insights
   settings: {
     theme: 'dark',
     notifications: true,
@@ -255,6 +256,86 @@ export const useAppStore = create<AppState>((set, get) => ({
         type: 'error',
         title: 'Delete Error',
         message: 'Failed to delete mood entry'
+      });
+    }
+  },
+
+  // Deep AI Insights actions
+  generateDeepInsight: async (entry: JournalEntry, userName: string = 'Friend') => {
+    try {
+      if (!entry.id) return;
+      
+      // Check if insight already exists
+      const existingInsight = get().deepInsights.find(insight => insight.journalEntryId === entry.id?.toString());
+      if (existingInsight) {
+        console.log('Deep insight already exists for this entry');
+        return;
+      }
+
+      // REAL DATA ONLY: Use actual AI service for deep analysis
+      const deepInsight = await aiService.generateDeepInsight(entry, userName);
+      if (deepInsight) {
+        // Store in database
+        const id = await db.deepInsights.add(deepInsight as any);
+        const savedInsight = { ...deepInsight, id: id.toString() };
+        
+        // Update state
+        set(state => ({
+          deepInsights: [savedInsight, ...state.deepInsights]
+        }));
+
+        get().addNotification({
+          type: 'success',
+          title: 'AI Insight Generated',
+          message: 'Deep spiritual insight has been created for your journal entry'
+        });
+      }
+    } catch (error) {
+      console.error('Error generating deep insight:', error);
+      get().addNotification({
+        type: 'error',
+        title: 'Insight Generation Failed',
+        message: 'Failed to generate AI insight. Please check your API configuration.'
+      });
+    }
+  },
+
+  getDeepInsights: async () => {
+    set({ isLoading: true });
+    try {
+      const insights = await db.deepInsights.orderBy('createdAt').reverse().toArray();
+      set({ deepInsights: insights.map(insight => ({ ...insight, id: insight.id?.toString() || '' })) });
+    } catch (error) {
+      console.error('Failed to load deep insights:', error);
+      get().addNotification({
+        type: 'error',
+        title: 'Load Error',
+        message: 'Failed to load AI insights'
+      });
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  deleteDeepInsight: async (id: string) => {
+    try {
+      await db.deepInsights.delete(parseInt(id));
+      
+      set(state => ({
+        deepInsights: state.deepInsights.filter(insight => insight.id !== id)
+      }));
+
+      get().addNotification({
+        type: 'success',
+        title: 'Insight Deleted',
+        message: 'AI insight has been deleted'
+      });
+    } catch (error) {
+      console.error('Failed to delete deep insight:', error);
+      get().addNotification({
+        type: 'error',
+        title: 'Delete Error',
+        message: 'Failed to delete AI insight'
       });
     }
   },

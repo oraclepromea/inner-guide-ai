@@ -1,5 +1,5 @@
-// REAL DATA ONLY: AI Service using actual OpenRouter API with no mock fallbacks
-// This service only provides AI analysis when properly configured with real API credentials
+// REAL DATA ONLY: Enhanced AI Service for Deep Journal Analysis using OpenRouter API
+// This service provides compassionate, spiritual insights with emotional depth analysis
 // All mock data has been completely removed to ensure only real analysis is performed
 
 import type { JournalEntry, MoodEntry } from '../types';
@@ -14,7 +14,40 @@ interface OpenRouterConfig {
   siteUrl: string;
 }
 
-// REAL DATA ONLY: AI Analysis Response Types - No mock interfaces
+// Enhanced AI Analysis Response Types for Deep Insights
+export interface DeepAIInsight {
+  id: string;
+  journalEntryId: string;
+  primaryEmotion: string;
+  intensity: number; // 1-10 scale
+  energy: 'very low' | 'low' | 'moderate' | 'high' | 'very high';
+  compassionateReflection: string;
+  keyInsights: string[];
+  reflectionQuestions: string[];
+  spiritualQuote: {
+    text: string;
+    author: string;
+    relevance: string;
+  };
+  themes: string[];
+  healingGuidance: string;
+  shadowWork: string;
+  lightWork: string;
+  confidence: number;
+  createdAt: string;
+  // Metadata linked to original journal entry
+  originalEntry: {
+    date: string;
+    time?: string;
+    location?: {
+      city: string;
+      country: string;
+    };
+    moonPhase?: string;
+    content: string;
+  };
+}
+
 interface AIInsightResponse {
   sentiment: 'positive' | 'negative' | 'neutral' | 'mixed';
   tone: string;
@@ -62,12 +95,12 @@ class AIService {
 
     this.config = {
       apiKey: apiKey.trim(),
-      model: 'anthropic/claude-3-haiku',
+      model: 'anthropic/claude-3-sonnet', // Using more powerful model for deep insights
       appName: 'Inner Guide AI',
       siteUrl: 'https://inner-guide-ai.app'
     };
     this.isConfigured = true;
-    console.log('AI Service: Configured successfully');
+    console.log('AI Service: Configured successfully with Claude-3 Sonnet for deep insights');
   }
 
   // REAL DATA ONLY: Check if service is properly configured
@@ -76,7 +109,7 @@ class AIService {
   }
 
   // REAL DATA ONLY: Make actual API request to OpenRouter
-  private async makeAPIRequest(messages: any[], maxTokens: number = 1000): Promise<any> {
+  private async makeAPIRequest(messages: any[], maxTokens: number = 2000): Promise<any> {
     if (!this.isReady() || !this.config) {
       throw new Error('AI Service not configured. Please set up OpenRouter API key.');
     }
@@ -94,7 +127,7 @@ class AIService {
           model: this.config.model,
           messages,
           max_tokens: maxTokens,
-          temperature: 0.7,
+          temperature: 0.8, // Higher creativity for compassionate insights
           top_p: 0.9,
         }),
       });
@@ -114,6 +147,111 @@ class AIService {
     } catch (error) {
       console.error('AI Service API Request Failed:', error);
       throw error;
+    }
+  }
+
+  // REAL DATA ONLY: Generate deep, compassionate AI insights
+  async generateDeepInsight(entry: JournalEntry, userName: string = 'Friend'): Promise<DeepAIInsight | null> {
+    if (!this.isReady()) {
+      console.warn('AI Service: Not configured, skipping deep insight generation');
+      return null;
+    }
+
+    if (!entry.content || entry.content.trim().length < 20) {
+      console.warn('AI Service: Entry content too short for meaningful deep analysis');
+      return null;
+    }
+
+    try {
+      const prompt = `As a compassionate spiritual guide and depth psychologist, provide a deep, healing analysis of this journal entry. Write with warmth, wisdom, and genuine care.
+
+Journal Entry Details:
+Date: ${entry.date}
+Time: ${entry.time || 'Not specified'}
+Location: ${entry.location ? `${entry.location.city}, ${entry.location.country}` : 'Not specified'}
+Moon Phase: ${entry.moonPhase || 'Unknown'}
+
+Entry Content:
+"${entry.content}"
+
+Please provide a JSON response with:
+
+1. primaryEmotion: The core emotion detected (e.g., "frustration", "grief", "joy", "anxiety", etc.)
+2. intensity: Emotional intensity from 1-10
+3. energy: Energy level ("very low", "low", "moderate", "high", "very high")
+4. compassionateReflection: A warm, understanding 200-300 word reflection addressing the person directly as "${userName}". Include psychological insights, spiritual wisdom, and validation of their experience. Reference shadow work and integration when appropriate.
+5. keyInsights: Array of 3-4 profound insights about their psychological patterns or spiritual journey
+6. reflectionQuestions: Array of 3 deep questions for self-exploration
+7. spiritualQuote: Object with "text", "author", and "relevance" - choose a quote that deeply resonates with their current state
+8. themes: Array of 2-4 core themes (e.g., "money obsession", "search for purpose", "inner conflict")
+9. healingGuidance: A paragraph of specific healing advice
+10. shadowWork: Insight into shadow aspects being revealed
+11. lightWork: Encouragement about positive qualities and potential
+12. confidence: Analysis confidence (0-1)
+
+Focus on:
+- Jungian psychology and individuation
+- Spiritual growth and meaning-making
+- Compassionate understanding of human struggle
+- Integration of shadow and light aspects
+- Practical wisdom for healing
+
+Return only valid JSON, no other text.`;
+
+      const messages = [
+        {
+          role: 'system',
+          content: 'You are a wise, compassionate spiritual guide and depth psychologist. You understand the human soul deeply and offer healing insights with warmth and wisdom. You integrate psychological understanding with spiritual wisdom, drawing from various traditions while remaining grounded and practical. Your analysis is profound yet accessible, always offered with love and understanding.'
+        },
+        {
+          role: 'user',
+          content: prompt
+        }
+      ];
+
+      const response = await this.makeAPIRequest(messages, 2500);
+      
+      try {
+        const analysisResult = JSON.parse(response);
+        
+        // Validate and structure the response
+        const deepInsight: DeepAIInsight = {
+          id: crypto.randomUUID(),
+          journalEntryId: entry.id?.toString() || '',
+          primaryEmotion: analysisResult.primaryEmotion || 'contemplation',
+          intensity: Math.min(10, Math.max(1, analysisResult.intensity || 5)),
+          energy: analysisResult.energy || 'moderate',
+          compassionateReflection: analysisResult.compassionateReflection || '',
+          keyInsights: Array.isArray(analysisResult.keyInsights) ? analysisResult.keyInsights : [],
+          reflectionQuestions: Array.isArray(analysisResult.reflectionQuestions) ? analysisResult.reflectionQuestions : [],
+          spiritualQuote: {
+            text: analysisResult.spiritualQuote?.text || "The wound is the place where the Light enters you.",
+            author: analysisResult.spiritualQuote?.author || "Rumi",
+            relevance: analysisResult.spiritualQuote?.relevance || "This speaks to finding meaning in struggle."
+          },
+          themes: Array.isArray(analysisResult.themes) ? analysisResult.themes : [],
+          healingGuidance: analysisResult.healingGuidance || '',
+          shadowWork: analysisResult.shadowWork || '',
+          lightWork: analysisResult.lightWork || '',
+          confidence: typeof analysisResult.confidence === 'number' ? analysisResult.confidence : 0.7,
+          createdAt: new Date().toISOString(),
+          originalEntry: {
+            date: entry.date,
+            time: entry.time,
+            location: entry.location,
+            moonPhase: entry.moonPhase,
+            content: entry.content
+          }
+        };
+
+        return deepInsight;
+      } catch (parseError) {
+        console.error('AI Service: Failed to parse deep insight response:', parseError);
+        return null;
+      }
+    } catch (error) {
+      console.error('AI Service: Deep insight generation failed:', error);
+      return null;
     }
   }
 
