@@ -645,7 +645,7 @@ export interface AppState {
   
   exportData: () => Promise<string>;
   importData: (data: string) => Promise<void>;
-  importJournalEntries: (entries: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>[]) => Promise<JournalEntry[]>;
+  importJournalEntries: (entries: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>[], importSource?: string) => Promise<JournalEntry[]>;
   clearAllData: () => Promise<void>;
 }
 

@@ -3,422 +3,382 @@
 // Automatically triggers AI analysis for imported journal entries
 
 import React, { useState, useCallback } from 'react';
-import { Upload, FileText, AlertCircle, CheckCircle, X, Download } from 'lucide-react';
+import { Upload, AlertCircle, CheckCircle, FileText } from 'lucide-react';
 import { useAppStore } from '../stores';
 import type { JournalEntry } from '../types';
 
 interface ImportResult {
   success: boolean;
-  entriesProcessed: number;
   entriesImported: number;
+  duplicatesSkipped: number;
   errors: string[];
-  duplicates: number;
 }
 
-interface ParsedEntry {
-  content: string;
+// Enhanced Auto Call backup format interface
+interface AutoCallEntry {
+  content?: string;
+  text?: string;
+  body?: string;
   date?: string;
+  created_at?: string;
+  timestamp?: string;
   title?: string;
+  subject?: string;
   mood?: number;
+  rating?: number;
   tags?: string[];
-  metadata?: Record<string, any>;
+  [key: string]: any;
 }
 
 export const ImportJournalFiles: React.FC = () => {
   const { importJournalEntries, journalEntries, addNotification } = useAppStore();
   const [isImporting, setIsImporting] = useState(false);
-  const [importResult, setImportResult] = useState<ImportResult | null>(null);
-  const [showResult, setShowResult] = useState(false);
+  const [lastResult, setLastResult] = useState<ImportResult | null>(null);
 
-  // Parse different file formats
-  const parseJournalFile = useCallback((content: string, filename: string): ParsedEntry[] => {
-    const entries: ParsedEntry[] = [];
-    const fileExtension = filename.split('.').pop()?.toLowerCase();
+  // Enhanced parsing for Auto Call backup format
+  const parseAutoCallBackup = useCallback((jsonData: any): Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>[] => {
+    const entries: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>[] = [];
 
     try {
-      switch (fileExtension) {
-        case 'json': {
-          const jsonData = JSON.parse(content);
-          if (Array.isArray(jsonData)) {
-            // Array of entries
-            entries.push(...jsonData.map(entry => ({
-              content: entry.content || entry.text || entry.body || '',
-              date: entry.date || entry.created_at || entry.timestamp,
-              title: entry.title || entry.subject,
-              mood: entry.mood || entry.rating,
-              tags: entry.tags || entry.labels || [],
-              metadata: entry
-            })));
-          } else if (jsonData.content || jsonData.text || jsonData.body) {
-            // Single entry
+      // Handle array of entries (typical Auto Call backup format)
+      if (Array.isArray(jsonData)) {
+        for (const item of jsonData) {
+          const entry = parseAutoCallEntry(item);
+          if (entry) entries.push(entry);
+        }
+      }
+      // Handle object with entries array
+      else if (jsonData.entries && Array.isArray(jsonData.entries)) {
+        for (const item of jsonData.entries) {
+          const entry = parseAutoCallEntry(item);
+          if (entry) entries.push(entry);
+        }
+      }
+      // Handle single entry object
+      else if (jsonData.content || jsonData.text || jsonData.body) {
+        const entry = parseAutoCallEntry(jsonData);
+        if (entry) entries.push(entry);
+      }
+      // Handle Inner Guide format (existing functionality)
+      else if (jsonData.journalEntries && Array.isArray(jsonData.journalEntries)) {
+        for (const item of jsonData.journalEntries) {
+          if (item.content && item.date) {
             entries.push({
-              content: jsonData.content || jsonData.text || jsonData.body || '',
-              date: jsonData.date || jsonData.created_at || jsonData.timestamp,
-              title: jsonData.title || jsonData.subject,
-              mood: jsonData.mood || jsonData.rating,
-              tags: jsonData.tags || jsonData.labels || [],
-              metadata: jsonData
+              title: item.title || 'Imported Entry',
+              content: item.content,
+              date: item.date,
+              mood: item.mood || 3,
+              tags: [...(item.tags || []), 'imported']
             });
           }
-          break;
         }
-
-        case 'txt':
-        case 'md': {
-          // Parse text/markdown files
-          const lines = content.split('\n');
-          let currentEntry: ParsedEntry = { content: '' };
-
-          for (const line of lines) {
-            const trimmedLine = line.trim();
-            
-            // Check for date patterns
-            const dateMatch = trimmedLine.match(/^(\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4}|\w+ \d{1,2}, \d{4})/);
-            if (dateMatch && currentEntry.content) {
-              // Save previous entry and start new one
-              entries.push(currentEntry);
-              currentEntry = { content: '', date: dateMatch[1] };
-            } else if (dateMatch) {
-              currentEntry.date = dateMatch[1];
-            }
-
-            // Check for title patterns
-            if (trimmedLine.startsWith('# ') || trimmedLine.startsWith('Title:')) {
-              currentEntry.title = trimmedLine.replace(/^#\s*|^Title:\s*/i, '');
-            }
-
-            // Check for mood patterns
-            const moodMatch = trimmedLine.match(/mood:\s*(\d+)/i);
-            if (moodMatch) {
-              currentEntry.mood = parseInt(moodMatch[1]);
-            }
-
-            // Check for tags
-            const tagsMatch = trimmedLine.match(/tags?:\s*(.+)/i);
-            if (tagsMatch) {
-              currentEntry.tags = tagsMatch[1].split(',').map(tag => tag.trim());
-            }
-
-            // Content
-            if (trimmedLine && !dateMatch && !trimmedLine.startsWith('#') && 
-                !trimmedLine.toLowerCase().startsWith('title:') &&
-                !trimmedLine.toLowerCase().startsWith('mood:') &&
-                !trimmedLine.toLowerCase().startsWith('tag')) {
-              if (currentEntry.content) {
-                currentEntry.content += '\n' + line;
-              } else {
-                currentEntry.content = line;
-              }
-            }
-          }
-          
-          // Add the last entry
-          if (currentEntry.content) {
-            entries.push(currentEntry);
-          }
-          break;
-        }
-
-        case 'csv': {
-          const lines = content.split('\n');
-          const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-          
-          for (let i = 1; i < lines.length; i++) {
-            if (!lines[i].trim()) continue;
-            
-            const values = lines[i].split(',');
-            const entry: ParsedEntry = { content: '' };
-            
-            headers.forEach((header, index) => {
-              const value = values[index]?.trim().replace(/^"|"$/g, '');
-              if (!value) return;
-              
-              switch (header) {
-                case 'content':
-                case 'text':
-                case 'body':
-                case 'entry':
-                  entry.content = value;
-                  break;
-                case 'date':
-                case 'created_at':
-                case 'timestamp':
-                  entry.date = value;
-                  break;
-                case 'title':
-                case 'subject':
-                  entry.title = value;
-                  break;
-                case 'mood':
-                case 'rating':
-                  entry.mood = parseInt(value);
-                  break;
-                case 'tags':
-                case 'labels':
-                  entry.tags = value.split(';').map(tag => tag.trim());
-                  break;
-              }
-            });
-            
-            if (entry.content) {
-              entries.push(entry);
-            }
-          }
-          break;
-        }
-
-        default:
-          // Treat as plain text
-          entries.push({
-            content: content,
-            date: new Date().toISOString().split('T')[0],
-            title: `Imported from ${filename}`
-          });
       }
     } catch (error) {
-      console.error('Error parsing file:', error);
-      // Fallback: treat as plain text
-      entries.push({
-        content: content,
-        date: new Date().toISOString().split('T')[0],
-        title: `Imported from ${filename}`
-      });
+      console.error('Error parsing backup data:', error);
+      throw new Error('Failed to parse backup file format');
     }
 
-    return entries.filter(entry => entry.content && entry.content.trim().length > 0);
+    return entries;
+  }, []);
+
+  // Parse individual Auto Call entry
+  const parseAutoCallEntry = useCallback((item: AutoCallEntry): Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'> | null => {
+    // Extract content from various possible fields
+    const content = item.content || item.text || item.body;
+    if (!content || typeof content !== 'string' || !content.trim()) {
+      return null;
+    }
+
+    // Extract date from various possible fields
+    let date = item.date || item.created_at || item.timestamp;
+    if (date) {
+      // Convert timestamp to date if needed
+      if (typeof date === 'number') {
+        date = new Date(date).toISOString().split('T')[0];
+      } else if (typeof date === 'string') {
+        // Handle various date formats
+        const parsedDate = new Date(date);
+        if (!isNaN(parsedDate.getTime())) {
+          date = parsedDate.toISOString().split('T')[0];
+        } else {
+          date = new Date().toISOString().split('T')[0];
+        }
+      }
+    } else {
+      date = new Date().toISOString().split('T')[0];
+    }
+
+    // Extract title
+    const title = item.title || item.subject || 'Auto Call Import';
+
+    // Extract mood/rating
+    let mood = item.mood || item.rating || 3;
+    if (typeof mood !== 'number' || mood < 1 || mood > 5) {
+      mood = 3;
+    }
+
+    // Extract and enhance tags
+    const originalTags = Array.isArray(item.tags) ? item.tags : [];
+    const tags = [...originalTags, 'auto-call-import'];
+
+    return {
+      title,
+      content: content.trim(),
+      date,
+      mood,
+      tags
+    };
   }, []);
 
   // Check for duplicates
-  const isDuplicate = useCallback((entry: ParsedEntry): boolean => {
+  const isDuplicate = useCallback((entry: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>): boolean => {
     return journalEntries.some(existing => 
       existing.content.trim() === entry.content.trim() &&
       existing.date === entry.date
     );
   }, [journalEntries]);
 
-  // Process imported entries
-  const processImportedEntries = useCallback(async (entries: ParsedEntry[]): Promise<ImportResult> => {
+  // Process file content
+  const processFile = useCallback(async (file: File): Promise<ImportResult> => {
     const result: ImportResult = {
       success: true,
-      entriesProcessed: entries.length,
       entriesImported: 0,
-      errors: [],
-      duplicates: 0
+      duplicatesSkipped: 0,
+      errors: []
     };
 
-    // Filter out duplicates first
-    const uniqueEntries: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>[] = [];
-    
-    for (const entry of entries) {
-      if (isDuplicate(entry)) {
-        result.duplicates++;
-        continue;
-      }
-
-      // Prepare journal entry
-      const journalEntry: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'> = {
-        title: entry.title || `Journal Entry ${entry.date || new Date().toLocaleDateString()}`,
-        content: entry.content,
-        date: entry.date || new Date().toISOString().split('T')[0],
-        mood: entry.mood || 3,
-        tags: entry.tags || []
-      };
-
-      uniqueEntries.push(journalEntry);
-    }
-
     try {
-      // REAL DATA ONLY: Import all entries with automatic AI analysis
-      if (uniqueEntries.length > 0) {
-        await importJournalEntries(uniqueEntries);
-        result.entriesImported = uniqueEntries.length;
-      }
-    } catch (error) {
-      console.error('Error importing entries:', error);
-      result.errors.push(`Failed to import entries: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      result.success = false;
-    }
-
-    return result;
-  }, [importJournalEntries, isDuplicate]);
-
-  // Handle file selection and import
-  const handleFileImport = useCallback(async (files: FileList) => {
-    setIsImporting(true);
-    setImportResult(null);
-
-    try {
-      const allEntries: ParsedEntry[] = [];
-
-      // Process each file
-      for (const file of Array.from(files)) {
-        const content = await file.text();
-        const entries = parseJournalFile(content, file.name);
-        allEntries.push(...entries);
+      const content = await file.text();
+      const jsonData = JSON.parse(content);
+      
+      // Parse entries based on format
+      const parsedEntries = parseAutoCallBackup(jsonData);
+      
+      if (parsedEntries.length === 0) {
+        result.errors.push('No valid journal entries found in file');
+        result.success = false;
+        return result;
       }
 
-      if (allEntries.length === 0) {
-        addNotification({
-          type: 'warning',
-          title: 'No Entries Found',
-          message: 'No valid journal entries were found in the imported files.'
-        });
-        return;
-      }
+      // Filter out duplicates
+      const newEntries = parsedEntries.filter(entry => {
+        if (isDuplicate(entry)) {
+          result.duplicatesSkipped++;
+          return false;
+        }
+        return true;
+      });
 
-      // Process all entries
-      const result = await processImportedEntries(allEntries);
-      setImportResult(result);
-      setShowResult(true);
-
-      if (result.success && result.entriesImported > 0) {
-        addNotification({
-          type: 'success',
-          title: 'Import Successful',
-          message: `Successfully imported ${result.entriesImported} journal entries.`
-        });
+      // Import new entries
+      if (newEntries.length > 0) {
+        await importJournalEntries(newEntries, `Import from ${file.name}`);
+        result.entriesImported = newEntries.length;
       }
 
     } catch (error) {
       console.error('Import error:', error);
+      result.errors.push(error instanceof Error ? error.message : 'Unknown error occurred');
+      result.success = false;
+    }
+
+    return result;
+  }, [parseAutoCallBackup, isDuplicate, importJournalEntries]);
+
+  // Handle file selection and import
+  const handleFileImport = useCallback(async (files: FileList | File[]) => {
+    setIsImporting(true);
+    
+    const allResults: ImportResult[] = [];
+    
+    try {
+      for (const file of Array.from(files)) {
+        if (file.type === 'application/json' || file.name.endsWith('.json')) {
+          const result = await processFile(file);
+          allResults.push(result);
+        } else {
+          allResults.push({
+            success: false,
+            entriesImported: 0,
+            duplicatesSkipped: 0,
+            errors: [`Unsupported file type: ${file.name}`]
+          });
+        }
+      }
+
+      // Combine results
+      const combinedResult: ImportResult = {
+        success: allResults.every(r => r.success),
+        entriesImported: allResults.reduce((sum, r) => sum + r.entriesImported, 0),
+        duplicatesSkipped: allResults.reduce((sum, r) => sum + r.duplicatesSkipped, 0),
+        errors: allResults.flatMap(r => r.errors)
+      };
+
+      setLastResult(combinedResult);
+
+      // Show notification
+      if (combinedResult.success && combinedResult.entriesImported > 0) {
+        addNotification({
+          type: 'success',
+          title: 'Import Successful',
+          message: `Imported ${combinedResult.entriesImported} entries. ${combinedResult.duplicatesSkipped} duplicates skipped.`
+        });
+      } else if (combinedResult.entriesImported > 0) {
+        addNotification({
+          type: 'warning',
+          title: 'Import Partially Successful',
+          message: `Imported ${combinedResult.entriesImported} entries with some errors.`
+        });
+      } else {
+        addNotification({
+          type: 'error',
+          title: 'Import Failed',
+          message: combinedResult.errors[0] || 'No entries were imported'
+        });
+      }
+
+    } catch (error) {
+      console.error('Import process failed:', error);
       addNotification({
         type: 'error',
         title: 'Import Failed',
-        message: error instanceof Error ? error.message : 'Unknown error occurred during import'
+        message: error instanceof Error ? error.message : 'Unknown error occurred'
       });
     } finally {
       setIsImporting(false);
     }
-  }, [parseJournalFile, processImportedEntries, addNotification]);
+  }, [processFile, addNotification]);
 
   // Handle drag and drop
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-      handleFileImport(files);
-    }
-  }, [handleFileImport]);
-
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
   }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const files = Array.from(e.dataTransfer.files).filter(
+      file => file.type === 'application/json' || file.name.endsWith('.json')
+    );
+    
+    if (files.length > 0) {
+      handleFileImport(files);
+    } else {
+      addNotification({
+        type: 'error',
+        title: 'Invalid Files',
+        message: 'Please select JSON files only'
+      });
+    }
+  }, [handleFileImport, addNotification]);
+
+  // Handle file input change
+  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      handleFileImport(files);
+    }
+    // Reset input
+    e.target.value = '';
+  }, [handleFileImport]);
 
   return (
     <div className="space-y-6">
-      {/* Import Instructions */}
-      <div className="glass-card p-6">
-        <h3 className="text-xl font-semibold text-white mb-4 flex items-center">
-          <Download className="w-5 h-5 mr-2 text-blue-400" />
-          Import Journal Entries
+      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+          Import Auto Call Journal Backups
         </h3>
-        <div className="text-slate-300 space-y-2 mb-4">
-          <p>Import your journal entries from the Auto Call app or other sources.</p>
-          <p className="text-sm">Supported formats:</p>
-          <ul className="text-sm list-disc list-inside ml-4 space-y-1">
-            <li><strong>JSON:</strong> Structured data with content, date, title, mood, tags</li>
-            <li><strong>CSV:</strong> Spreadsheet format with headers</li>
-            <li><strong>TXT/MD:</strong> Plain text or markdown with date headers</li>
-            <li><strong>Any text file:</strong> Will be imported as a single entry</li>
-          </ul>
-        </div>
-      </div>
+        
+        <div className="space-y-4">
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <div className="flex items-start space-x-3">
+              <FileText className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+              <div className="text-sm text-blue-700 dark:text-blue-300">
+                <p className="font-medium mb-1">Auto Call Backup Format Supported</p>
+                <p>This importer can handle your Auto Call journal backup files. It will automatically:</p>
+                <ul className="list-disc list-inside mt-2 space-y-1">
+                  <li>Parse the backup JSON format</li>
+                  <li>Extract journal entries, dates, and metadata</li>
+                  <li>Skip duplicate entries</li>
+                  <li>Add "auto-call-import" tags for tracking</li>
+                </ul>
+              </div>
+            </div>
+          </div>
 
-      {/* File Upload Area */}
-      <div 
-        className="glass-card p-8 border-2 border-dashed border-slate-600 hover:border-blue-400 transition-colors"
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-      >
-        <div className="text-center">
-          <Upload className="w-16 h-16 mx-auto mb-4 text-slate-400" />
-          <h3 className="text-lg font-medium text-white mb-2">
-            Drop files here or click to browse
-          </h3>
-          <p className="text-slate-400 mb-4">
-            Select multiple journal files to import at once
-          </p>
-          
-          <input
-            type="file"
-            multiple
-            accept=".txt,.md,.json,.csv"
-            onChange={(e) => e.target.files && handleFileImport(e.target.files)}
-            className="hidden"
-            id="file-upload"
-            disabled={isImporting}
-          />
-          <label
-            htmlFor="file-upload"
-            className="btn-primary inline-flex items-center space-x-2 cursor-pointer disabled:opacity-50"
+          {/* File Upload Area */}
+          <div
+            className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
           >
-            <FileText className="w-4 h-4" />
-            <span>{isImporting ? 'Importing...' : 'Select Files'}</span>
-          </label>
-        </div>
-      </div>
-
-      {/* Import Progress */}
-      {isImporting && (
-        <div className="glass-card p-6">
-          <div className="flex items-center space-x-3">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-400"></div>
-            <span className="text-white">Importing journal entries...</span>
-          </div>
-        </div>
-      )}
-
-      {/* Import Results */}
-      {showResult && importResult && (
-        <div className="glass-card p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h4 className="text-lg font-semibold text-white flex items-center">
-              {importResult.success ? (
-                <CheckCircle className="w-5 h-5 mr-2 text-green-400" />
-              ) : (
-                <AlertCircle className="w-5 h-5 mr-2 text-yellow-400" />
-              )}
-              Import Results
-            </h4>
-            <button
-              onClick={() => setShowResult(false)}
-              className="text-slate-400 hover:text-white"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <Upload className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <p className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Drop Auto Call backup files here
+            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Or click to select JSON backup files
+            </p>
+            <label className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors">
+              <Upload className="h-4 w-4 mr-2" />
+              Select Files
+              <input
+                type="file"
+                accept=".json,application/json"
+                multiple
+                onChange={handleFileChange}
+                className="hidden"
+              />
+            </label>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-            <div className="bg-slate-700/30 rounded-lg p-3">
-              <p className="text-slate-400 text-sm">Processed</p>
-              <p className="text-2xl font-bold text-white">{importResult.entriesProcessed}</p>
+          {/* Import Status */}
+          {isImporting && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="flex items-center space-x-3">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                <span className="text-blue-700 dark:text-blue-300">Processing backup files...</span>
+              </div>
             </div>
-            <div className="bg-slate-700/30 rounded-lg p-3">
-              <p className="text-slate-400 text-sm">Imported</p>
-              <p className="text-2xl font-bold text-green-400">{importResult.entriesImported}</p>
-            </div>
-            <div className="bg-slate-700/30 rounded-lg p-3">
-              <p className="text-slate-400 text-sm">Duplicates</p>
-              <p className="text-2xl font-bold text-yellow-400">{importResult.duplicates}</p>
-            </div>
-            <div className="bg-slate-700/30 rounded-lg p-3">
-              <p className="text-slate-400 text-sm">Errors</p>
-              <p className="text-2xl font-bold text-red-400">{importResult.errors.length}</p>
-            </div>
-          </div>
+          )}
 
-          {importResult.errors.length > 0 && (
-            <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4">
-              <h5 className="text-red-400 font-medium mb-2">Errors:</h5>
-              <ul className="text-red-300 text-sm space-y-1">
-                {importResult.errors.map((error, index) => (
-                  <li key={index}>• {error}</li>
-                ))}
-              </ul>
+          {/* Last Import Result */}
+          {lastResult && !isImporting && (
+            <div className={`border rounded-lg p-4 ${
+              lastResult.success 
+                ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' 
+                : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+            }`}>
+              <div className="flex items-start space-x-3">
+                {lastResult.success ? (
+                  <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
+                ) : (
+                  <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                )}
+                <div className={`text-sm ${
+                  lastResult.success 
+                    ? 'text-green-700 dark:text-green-300' 
+                    : 'text-red-700 dark:text-red-300'
+                }`}>
+                  <p className="font-medium mb-1">
+                    {lastResult.success ? 'Import Completed' : 'Import Issues'}
+                  </p>
+                  <ul className="space-y-1">
+                    <li>✓ {lastResult.entriesImported} entries imported</li>
+                    {lastResult.duplicatesSkipped > 0 && (
+                      <li>⚠ {lastResult.duplicatesSkipped} duplicates skipped</li>
+                    )}
+                    {lastResult.errors.map((error, index) => (
+                      <li key={index}>✗ {error}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
             </div>
           )}
         </div>
-      )}
+      </div>
     </div>
   );
 };

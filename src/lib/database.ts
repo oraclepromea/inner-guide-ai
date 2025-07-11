@@ -12,6 +12,15 @@ import type {
   ChatMessage
 } from '../types';
 
+// New interface for backup entries
+export interface ImportedJournalBackup extends JournalEntry {
+  originalImportDate: string;
+  importSource: string;
+  importMethod: 'manual' | 'auto';
+  originalFileName?: string;
+  checksum?: string;
+}
+
 export class InnerGuideDB extends Dexie {
   journalEntries!: Table<JournalEntry>;
   moodEntries!: Table<MoodEntry>;
@@ -22,10 +31,11 @@ export class InnerGuideDB extends Dexie {
   therapyMessages!: Table<TherapyMessage>;
   personalGrowthProfile!: Table<PersonalGrowthProfile>;
   therapyGoals!: Table<TherapyGoal>;
+  importedJournalBackups!: Table<ImportedJournalBackup>;
 
   constructor() {
     super('InnerGuideDB');
-    this.version(3).stores({
+    this.version(4).stores({
       journalEntries: '++id, date, createdAt, updatedAt, tags',
       moodEntries: '++id, date, createdAt, updatedAt, mood',
       settings: '++id',
@@ -34,7 +44,8 @@ export class InnerGuideDB extends Dexie {
       therapySessions: '++id, createdAt, updatedAt, therapistPersonality',
       therapyMessages: '++id, sessionId, sender, timestamp, type',
       personalGrowthProfile: '++userId, updatedAt',
-      therapyGoals: '++id, category, targetDate, progress, createdAt'
+      therapyGoals: '++id, category, targetDate, progress, createdAt',
+      importedJournalBackups: '++id, originalImportDate, importSource, importMethod, date, createdAt, updatedAt, tags, checksum'
     });
 
     this.journalEntries.hook('creating', (_primKey: any, obj: any, _trans: any) => {
@@ -86,6 +97,39 @@ export class InnerGuideDB extends Dexie {
     this.therapyGoals.hook('updating', (modifications: any, _primKey: any, _obj: any, _trans: any) => {
       modifications.updatedAt = new Date().toISOString();
     });
+
+    // Add backup table hooks
+    this.importedJournalBackups.hook('creating', (_primKey: any, obj: any, _trans: any) => {
+      const now = new Date().toISOString();
+      obj.createdAt = obj.createdAt || now;
+      obj.updatedAt = obj.updatedAt || now;
+      obj.originalImportDate = obj.originalImportDate || now;
+      
+      // Generate checksum for duplicate detection
+      if (!obj.checksum) {
+        obj.checksum = this.generateChecksum(obj.content, obj.date);
+      }
+      
+      // Validate required fields
+      if (!obj.content || obj.content.trim().length === 0) {
+        throw new Error('Backup entry content cannot be empty');
+      }
+      if (!obj.importSource) {
+        throw new Error('Import source is required for backup entries');
+      }
+    });
+  }
+
+  private generateChecksum(content: string, date: string): string {
+    // Simple checksum generation for duplicate detection
+    const str = `${content.trim()}-${date}`;
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    return Math.abs(hash).toString(36);
   }
 }
 
@@ -585,6 +629,208 @@ export const dbOperations = {
     } catch (error) {
       console.error('Error updating therapy goal:', error);
       throw new Error('Failed to update therapy goal');
+    }
+  },
+
+  // Imported Journal Backup operations
+  async createJournalBackup(
+    entry: Omit<JournalEntry, 'id'>, 
+    importSource: string, 
+    importMethod: 'manual' | 'auto',
+    originalFileName?: string
+  ): Promise<ImportedJournalBackup> {
+    try {
+      const backupEntry: Omit<ImportedJournalBackup, 'id'> = {
+        ...entry,
+        originalImportDate: new Date().toISOString(),
+        importSource,
+        importMethod,
+        originalFileName
+      };
+      
+      const id = await db.importedJournalBackups.add(backupEntry);
+      dbCache.clear();
+      return { ...backupEntry, id };
+    } catch (error) {
+      console.error('Error creating journal backup:', error);
+      throw new Error('Failed to create journal backup');
+    }
+  },
+
+  async getImportedBackups(limit = 50, offset = 0) {
+    const cacheKey = `imported_backups_${limit}_${offset}`;
+    const cached = dbCache.get(cacheKey);
+    if (cached) return cached;
+
+    try {
+      const backups = await db.importedJournalBackups
+        .orderBy('originalImportDate')
+        .reverse()
+        .offset(offset)
+        .limit(limit)
+        .toArray();
+      
+      dbCache.set(cacheKey, backups, 2 * 60 * 1000);
+      return backups;
+    } catch (error) {
+      console.error('Error fetching imported backups:', error);
+      throw new Error('Failed to load imported backups');
+    }
+  },
+
+  async getBackupsByImportSource(importSource: string) {
+    const cacheKey = `backups_by_source_${importSource}`;
+    const cached = dbCache.get(cacheKey);
+    if (cached) return cached;
+
+    try {
+      const backups = await db.importedJournalBackups
+        .where('importSource')
+        .equals(importSource)
+        .sortBy('originalImportDate');
+      
+      dbCache.set(cacheKey, backups, 2 * 60 * 1000);
+      return backups;
+    } catch (error) {
+      console.error('Error fetching backups by source:', error);
+      throw new Error('Failed to load backups by source');
+    }
+  },
+
+  async getBackupsByMethod(importMethod: 'manual' | 'auto') {
+    const cacheKey = `backups_by_method_${importMethod}`;
+    const cached = dbCache.get(cacheKey);
+    if (cached) return cached;
+
+    try {
+      const backups = await db.importedJournalBackups
+        .where('importMethod')
+        .equals(importMethod)
+        .sortBy('originalImportDate');
+      
+      dbCache.set(cacheKey, backups, 2 * 60 * 1000);
+      return backups;
+    } catch (error) {
+      console.error('Error fetching backups by method:', error);
+      throw new Error('Failed to load backups by method');
+    }
+  },
+
+  async searchImportedBackups(query: string, limit = 20) {
+    const cacheKey = `search_backups_${query}_${limit}`;
+    const cached = dbCache.get(cacheKey);
+    if (cached) return cached;
+
+    try {
+      const backups = await db.importedJournalBackups
+        .where('content')
+        .startsWithIgnoreCase(query)
+        .or('importSource')
+        .startsWithIgnoreCase(query)
+        .limit(limit)
+        .toArray();
+      
+      dbCache.set(cacheKey, backups, 1 * 60 * 1000);
+      return backups;
+    } catch (error) {
+      console.error('Error searching imported backups:', error);
+      throw new Error('Failed to search imported backups');
+    }
+  },
+
+  async deleteBackup(id: number) {
+    try {
+      await db.importedJournalBackups.delete(id);
+      dbCache.clear();
+    } catch (error) {
+      console.error('Error deleting backup:', error);
+      throw new Error('Failed to delete backup');
+    }
+  },
+
+  async getBackupStats() {
+    const cacheKey = 'backup_stats';
+    const cached = dbCache.get(cacheKey);
+    if (cached) return cached;
+
+    try {
+      const [totalBackups, manualBackups, autoBackups, sources] = await Promise.all([
+        db.importedJournalBackups.count(),
+        db.importedJournalBackups.where('importMethod').equals('manual').count(),
+        db.importedJournalBackups.where('importMethod').equals('auto').count(),
+        db.importedJournalBackups.orderBy('importSource').uniqueKeys()
+      ]);
+
+      const stats = {
+        totalBackups,
+        manualBackups,
+        autoBackups,
+        uniqueSources: sources.length,
+        sources: sources as string[]
+      };
+
+      dbCache.set(cacheKey, stats, 5 * 60 * 1000);
+      return stats;
+    } catch (error) {
+      console.error('Error fetching backup stats:', error);
+      throw new Error('Failed to load backup statistics');
+    }
+  },
+
+  async restoreFromBackup(backupId: number): Promise<JournalEntry> {
+    try {
+      const backup = await db.importedJournalBackups.get(backupId);
+      if (!backup) {
+        throw new Error('Backup not found');
+      }
+
+      // Create new journal entry from backup (excluding backup-specific fields)
+      const journalEntry: Omit<JournalEntry, 'id'> = {
+        title: backup.title || `Imported Entry ${new Date().toLocaleString()}`,
+        content: backup.content,
+        date: backup.date || new Date().toISOString().split('T')[0],
+        mood: backup.mood || 3,
+        tags: backup.tags || ['imported'],
+        location: backup.location,
+        moonPhase: backup.moonPhase,
+        aiInsights: backup.aiInsights,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      const id = await db.journalEntries.add(journalEntry);
+      dbCache.clear();
+      return { ...journalEntry, id };
+    } catch (error) {
+      console.error('Error restoring from backup:', error);
+      throw new Error('Failed to restore from backup');
+    }
+  },
+
+  generateChecksum(content: string, date: string): string {
+    // Simple checksum generation for duplicate detection
+    const str = `${content.trim()}-${date}`;
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    return Math.abs(hash).toString(36);
+  },
+
+  async checkBackupDuplicate(content: string, date: string): Promise<boolean> {
+    try {
+      const checksum = this.generateChecksum(content, date);
+      const existingBackup = await db.importedJournalBackups
+        .where('checksum')
+        .equals(checksum)
+        .first();
+      
+      return !!existingBackup;
+    } catch (error) {
+      console.error('Error checking backup duplicate:', error);
+      return false;
     }
   }
 };

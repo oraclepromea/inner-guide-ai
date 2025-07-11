@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, X, Loader2, Tag, Smile, Hash, Clock, MapPin, Calendar } from 'lucide-react';
+import { Save, X, Loader2, Hash, Clock, ChevronDown, ChevronRight } from 'lucide-react';
 
 interface AddEntryFormProps {
   content: string;
@@ -19,11 +19,11 @@ interface EntryData {
 }
 
 const MOOD_OPTIONS = [
-  { value: 1, label: 'Terrible', emoji: '😢', color: 'text-red-500' },
-  { value: 2, label: 'Poor', emoji: '😔', color: 'text-orange-500' },
-  { value: 3, label: 'Okay', emoji: '😐', color: 'text-yellow-500' },
-  { value: 4, label: 'Good', emoji: '😊', color: 'text-green-500' },
-  { value: 5, label: 'Great', emoji: '😄', color: 'text-blue-500' }
+  { value: 1, label: 'Terrible', emoji: '😢', color: 'from-red-500 to-red-600' },
+  { value: 2, label: 'Poor', emoji: '😔', color: 'from-orange-500 to-orange-600' },
+  { value: 3, label: 'Okay', emoji: '😐', color: 'from-yellow-500 to-yellow-600' },
+  { value: 4, label: 'Good', emoji: '😊', color: 'from-green-500 to-green-600' },
+  { value: 5, label: 'Great', emoji: '😄', color: 'from-blue-500 to-blue-600' }
 ];
 
 export const AddEntryForm: React.FC<AddEntryFormProps> = ({
@@ -38,15 +38,16 @@ export const AddEntryForm: React.FC<AddEntryFormProps> = ({
   const [currentTag, setCurrentTag] = useState('');
   const [wordCount, setWordCount] = useState(0);
   const [readingTime, setReadingTime] = useState(0);
+  const [isMetadataExpanded, setIsMetadataExpanded] = useState(false); // Minimized by default
   
   // Date/Time/Location fields - always editable
   const [entryDate, setEntryDate] = useState(() => {
     const now = new Date();
-    return now.toISOString().split('T')[0]; // YYYY-MM-DD format
+    return now.toISOString().split('T')[0];
   });
   const [entryTime, setEntryTime] = useState(() => {
     const now = new Date();
-    return now.toTimeString().slice(0, 5); // HH:MM format
+    return now.toTimeString().slice(0, 5);
   });
   const [city, setCity] = useState('');
   const [country, setCountry] = useState('');
@@ -55,17 +56,14 @@ export const AddEntryForm: React.FC<AddEntryFormProps> = ({
     const words = content.trim().split(/\s+/).filter(word => word.length > 0);
     const count = words.length;
     setWordCount(count);
-    setReadingTime(Math.ceil(count / 200)); // Average reading speed: 200 words/minute
+    setReadingTime(Math.ceil(count / 200));
   }, [content]);
 
-  // Try to get user's current location
   useEffect(() => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         async (_position) => {
           try {
-            // For demo purposes, set some default values
-            // In a real app, you'd use a geocoding service
             setCity('Current Location');
             setCountry('Auto-detected');
           } catch (error) {
@@ -113,26 +111,24 @@ export const AddEntryForm: React.FC<AddEntryFormProps> = ({
     setEntryTime(now.toTimeString().slice(0, 5));
   };
 
-  const selectedMoodData = MOOD_OPTIONS.find(option => option.value === selectedMood);
-
   return (
     <form onSubmit={handleSubmit} className="space-y-6 animate-slide-up">
       {/* Main Content Area */}
       <div>
-        <label htmlFor="entry-content" className="block text-sm font-semibold text-primary-300 mb-3">
-          What's on your mind?
+        <label htmlFor="entry-content" className="block text-sm font-semibold text-purple-300 mb-3">
+          ✨ What's on your mind?
         </label>
         <textarea
           id="entry-content"
           value={content}
           onChange={(e) => onChange(e.target.value)}
           placeholder="Share your thoughts, feelings, or experiences... Write freely and authentically."
-          className="textarea-field w-full h-40 shadow-inner-glow resize-none"
+          className="w-full h-40 bg-slate-800/50 border border-purple-500/30 rounded-xl p-4 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 shadow-[0_0_20px_rgba(139,69,255,0.15)] resize-none backdrop-blur-sm"
           autoFocus
         />
         
         {/* Writing Stats */}
-        <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
+        <div className="flex items-center justify-between mt-2 text-xs text-gray-400">
           <div className="flex items-center space-x-4">
             <span className="flex items-center space-x-1">
               <Hash className="w-3 h-3" />
@@ -146,196 +142,198 @@ export const AddEntryForm: React.FC<AddEntryFormProps> = ({
         </div>
       </div>
 
-      {/* Always Visible Entry Details Section */}
-      <div className="space-y-6 p-6 bg-gradient-to-r from-slate-800/30 via-slate-700/20 to-slate-800/30 rounded-xl border border-slate-600/30 backdrop-blur-sm">
-        <h3 className="text-lg font-semibold text-white mb-4">Entry Details</h3>
-        
-        {/* Date and Time */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-semibold text-primary-300 mb-2">
-              <Calendar className="w-4 h-4 inline mr-1" />
-              Date
-            </label>
-            <div className="flex space-x-2">
+      {/* Collapsible Metadata Section */}
+      <div className="bg-slate-800/30 border border-purple-500/20 rounded-xl overflow-hidden backdrop-blur-sm">
+        {/* Toggle Header */}
+        <button
+          type="button"
+          onClick={() => setIsMetadataExpanded(!isMetadataExpanded)}
+          className="w-full flex items-center justify-between p-4 text-left hover:bg-purple-500/10 transition-colors duration-200"
+        >
+          <div className="flex items-center space-x-3">
+            <span className="text-lg">📊</span>
+            <span className="text-sm font-semibold text-purple-300">
+              Mood & Details
+            </span>
+            {selectedMood && (
+              <span className="text-sm text-gray-400">
+                ({MOOD_OPTIONS.find(m => m.value === selectedMood)?.emoji} {MOOD_OPTIONS.find(m => m.value === selectedMood)?.label})
+              </span>
+            )}
+          </div>
+          <div className="flex items-center space-x-2">
+            <span className="text-xs text-gray-400">
+              {isMetadataExpanded ? 'Hide' : 'Show'}
+            </span>
+            {isMetadataExpanded ? (
+              <ChevronDown className="w-4 h-4 text-purple-400" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-purple-400" />
+            )}
+          </div>
+        </button>
+
+        {/* Collapsible Content */}
+        {isMetadataExpanded && (
+          <div className="p-4 pt-0 space-y-6 animate-slide-down">
+            {/* Mood Selection */}
+            <div className="space-y-4">
+              <label className="block text-sm font-semibold text-purple-300">
+                😊 How are you feeling?
+              </label>
+              <div className="grid grid-cols-5 gap-2">
+                {MOOD_OPTIONS.map((mood) => (
+                  <button
+                    key={mood.value}
+                    type="button"
+                    onClick={() => setSelectedMood(mood.value)}
+                    className={`p-3 rounded-xl border-2 transition-all duration-200 group ${
+                      selectedMood === mood.value
+                        ? `bg-gradient-to-br ${mood.color} border-white/30 shadow-[0_0_25px_rgba(139,69,255,0.4)] scale-105`
+                        : 'bg-slate-800/50 border-purple-500/20 hover:border-purple-500/40 hover:shadow-[0_0_15px_rgba(139,69,255,0.2)]'
+                    }`}
+                  >
+                    <div className="text-2xl mb-1">{mood.emoji}</div>
+                    <div className={`text-xs font-medium ${
+                      selectedMood === mood.value ? 'text-white' : 'text-gray-300'
+                    }`}>
+                      {mood.label}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Tags */}
+            <div className="space-y-3">
+              <label className="block text-sm font-semibold text-purple-300">
+                🏷️ Tags
+              </label>
+              <div className="flex flex-wrap gap-2 mb-3">
+                {tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center gap-1 px-3 py-1 bg-gradient-to-r from-purple-600/80 to-purple-700/80 text-white text-sm rounded-full border border-purple-400/30 shadow-[0_0_10px_rgba(139,69,255,0.3)]"
+                  >
+                    #{tag}
+                    <button
+                      type="button"
+                      onClick={() => removeTag(tag)}
+                      className="ml-1 text-purple-200 hover:text-white transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
               <input
-                type="date"
-                value={entryDate}
-                onChange={(e) => setEntryDate(e.target.value)}
-                className="input-field flex-1"
+                type="text"
+                value={currentTag}
+                onChange={(e) => setCurrentTag(e.target.value)}
+                onKeyDown={handleAddTag}
+                placeholder="Add a tag and press Enter..."
+                className="w-full bg-slate-800/50 border border-purple-500/30 rounded-xl p-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 shadow-[0_0_15px_rgba(139,69,255,0.1)]"
               />
-              <button
-                type="button"
-                onClick={setToNow}
-                className="btn-ghost text-xs px-3"
-                title="Set to current date/time"
-              >
-                Now
-              </button>
+            </div>
+
+            {/* Date and Time */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-purple-300 mb-2">
+                  📅 Date
+                </label>
+                <div className="flex space-x-2">
+                  <input
+                    type="date"
+                    value={entryDate}
+                    onChange={(e) => setEntryDate(e.target.value)}
+                    className="flex-1 bg-slate-800/50 border border-purple-500/30 rounded-xl p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 shadow-[0_0_15px_rgba(139,69,255,0.1)]"
+                  />
+                  <button
+                    type="button"
+                    onClick={setToNow}
+                    className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white text-xs px-4 py-2 rounded-xl transition-all duration-200 shadow-[0_0_15px_rgba(255,165,0,0.3)] hover:shadow-[0_0_20px_rgba(255,165,0,0.5)]"
+                    title="Set to current date/time"
+                  >
+                    ⏰ Now
+                  </button>
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-semibold text-purple-300 mb-2">
+                  🕐 Time
+                </label>
+                <input
+                  type="time"
+                  value={entryTime}
+                  onChange={(e) => setEntryTime(e.target.value)}
+                  className="w-full bg-slate-800/50 border border-purple-500/30 rounded-xl p-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 shadow-[0_0_15px_rgba(139,69,255,0.1)]"
+                />
+              </div>
+            </div>
+
+            {/* Location */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-purple-300 mb-2">
+                  🏙️ City
+                </label>
+                <input
+                  type="text"
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  placeholder="Current Location"
+                  className="w-full bg-slate-800/50 border border-purple-500/30 rounded-xl p-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 shadow-[0_0_15px_rgba(139,69,255,0.1)]"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-semibold text-purple-300 mb-2">
+                  🌍 Country
+                </label>
+                <input
+                  type="text"
+                  value={country}
+                  onChange={(e) => setCountry(e.target.value)}
+                  placeholder="Auto-detected"
+                  className="w-full bg-slate-800/50 border border-purple-500/30 rounded-xl p-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 shadow-[0_0_15px_rgba(139,69,255,0.1)]"
+                />
+              </div>
             </div>
           </div>
-          
-          <div>
-            <label className="block text-sm font-semibold text-primary-300 mb-2">
-              <Clock className="w-4 h-4 inline mr-1" />
-              Time
-            </label>
-            <input
-              type="time"
-              value={entryTime}
-              onChange={(e) => setEntryTime(e.target.value)}
-              className="input-field w-full"
-            />
-          </div>
-        </div>
-
-        {/* Location */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-semibold text-primary-300 mb-2">
-              <MapPin className="w-4 h-4 inline mr-1" />
-              City
-            </label>
-            <input
-              type="text"
-              value={city}
-              onChange={(e) => setCity(e.target.value)}
-              placeholder="e.g., New York, London, Tokyo"
-              className="input-field w-full"
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-semibold text-primary-300 mb-2">
-              Country
-            </label>
-            <input
-              type="text"
-              value={country}
-              onChange={(e) => setCountry(e.target.value)}
-              placeholder="e.g., United States, United Kingdom, Japan"
-              className="input-field w-full"
-            />
-          </div>
-        </div>
-
-        {/* Mood Selection */}
-        <div>
-          <label className="block text-sm font-semibold text-primary-300 mb-3">
-            <Smile className="w-4 h-4 inline mr-1" />
-            How are you feeling?
-          </label>
-          <div className="flex space-x-2">
-            {MOOD_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setSelectedMood(option.value)}
-                className={`flex flex-col items-center p-3 rounded-lg border-2 transition-all hover:scale-105 ${
-                  selectedMood === option.value
-                    ? 'border-primary-500 bg-primary-500/20 shadow-lg'
-                    : 'border-gray-600 hover:border-gray-500'
-                }`}
-                title={option.label}
-              >
-                <span className="text-2xl mb-1">{option.emoji}</span>
-                <span className="text-xs text-gray-400">{option.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Tags */}
-        <div>
-          <label className="block text-sm font-semibold text-primary-300 mb-3">
-            <Tag className="w-4 h-4 inline mr-1" />
-            Tags
-          </label>
-          <div className="flex flex-wrap gap-2 mb-3">
-            {tags.map((tag) => (
-              <span
-                key={tag}
-                className="inline-flex items-center px-3 py-1 bg-primary-500/20 text-primary-300 rounded-full text-sm border border-primary-500/30 shadow-sm"
-              >
-                #{tag}
-                <button
-                  type="button"
-                  onClick={() => removeTag(tag)}
-                  className="ml-2 text-primary-400 hover:text-red-400 transition-colors"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            ))}
-          </div>
-          <input
-            type="text"
-            value={currentTag}
-            onChange={(e) => setCurrentTag(e.target.value)}
-            onKeyDown={handleAddTag}
-            placeholder="Add tags (press Enter to add) - e.g., work, personal, gratitude"
-            className="input-field w-full"
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            Tags help organize and find your entries later
-          </p>
-        </div>
+        )}
       </div>
-      
-      {/* Summary and Actions */}
-      <div className="flex items-center justify-between p-4 bg-slate-800/20 rounded-lg border border-slate-600/20">
-        <div className="flex items-center space-x-4 text-sm text-gray-400">
-          <span className="flex items-center space-x-1">
-            <Calendar className="w-3 h-3" />
-            <span>{new Date(entryDate).toLocaleDateString()}</span>
-          </span>
-          <span className="flex items-center space-x-1">
-            <Clock className="w-3 h-3" />
-            <span>{entryTime}</span>
-          </span>
-          {(city || country) && (
-            <span className="flex items-center space-x-1">
-              <MapPin className="w-3 h-3" />
-              <span>{[city, country].filter(Boolean).join(', ')}</span>
-            </span>
+
+      {/* Action Buttons */}
+      <div className="flex space-x-3 pt-4">
+        <button
+          type="submit"
+          disabled={!content.trim() || isSubmitting}
+          className="flex-1 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 disabled:from-gray-600 disabled:to-gray-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 flex items-center justify-center space-x-2 shadow-[0_0_20px_rgba(34,197,94,0.3)] hover:shadow-[0_0_25px_rgba(34,197,94,0.5)] disabled:shadow-none"
+        >
+          {isSubmitting ? (
+            <>
+              <Loader2 className="w-5 h-5 animate-spin" />
+              <span>Saving...</span>
+            </>
+          ) : (
+            <>
+              <Save className="w-5 h-5" />
+              <span>💾 Save Entry</span>
+            </>
           )}
-          {selectedMoodData && (
-            <span className="flex items-center space-x-1">
-              <span>{selectedMoodData.emoji}</span>
-              <span>Feeling {selectedMoodData.label}</span>
-            </span>
-          )}
-          {tags.length > 0 && (
-            <span className="flex items-center space-x-1">
-              <Tag className="w-3 h-3" />
-              <span>{tags.length} tag{tags.length !== 1 ? 's' : ''}</span>
-            </span>
-          )}
-        </div>
+        </button>
         
-        <div className="flex items-center space-x-4">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="btn-ghost flex items-center space-x-2"
-          >
-            <X className="w-4 h-4" />
-            <span>Cancel</span>
-          </button>
-          
-          <button
-            type="submit"
-            disabled={!content.trim() || isSubmitting}
-            className="btn-primary flex items-center space-x-2"
-          >
-            {isSubmitting ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Save className="w-4 h-4" />
-            )}
-            <span>{isSubmitting ? 'Saving...' : 'Save Entry'}</span>
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={isSubmitting}
+          className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 disabled:from-gray-600 disabled:to-gray-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 flex items-center justify-center space-x-2 shadow-[0_0_20px_rgba(239,68,68,0.3)] hover:shadow-[0_0_25px_rgba(239,68,68,0.5)] disabled:shadow-none"
+        >
+          <X className="w-5 h-5" />
+          <span>❌ Cancel</span>
+        </button>
       </div>
     </form>
   );

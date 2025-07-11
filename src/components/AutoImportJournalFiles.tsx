@@ -2,542 +2,389 @@
 // No mock data - all imported entries are analyzed with real AI if configured
 // Automatically triggers AI analysis for imported journal entries from monitored directory
 
-import React, { useState, useCallback, useEffect } from 'react';
-import { AlertCircle, CheckCircle, RefreshCw, FolderOpen, Eye, EyeOff, Clock } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { 
+  FolderOpen, 
+  RefreshCw, 
+  CheckCircle, 
+  Play,
+  Pause,
+  AlertCircle,
+  Clock
+} from 'lucide-react';
 import { useAppStore } from '../stores';
-import type { JournalEntry } from '../types';
+import { useNotificationHelpers } from './NotificationSystem';
 
-// Add File System Access API type declarations
+interface AutoImportStats {
+  totalScanned: number;
+  newImported: number;
+  duplicatesSkipped: number;
+  errors: number;
+  lastScanTime: Date | null;
+}
+
+// File System Access API types
 declare global {
   interface Window {
-    showDirectoryPicker?: (options?: {
+    showDirectoryPicker(options?: {
       mode?: 'read' | 'readwrite';
       startIn?: 'desktop' | 'documents' | 'downloads' | 'music' | 'pictures' | 'videos';
-    }) => Promise<FileSystemDirectoryHandle>;
+      id?: string;
+    }): Promise<FileSystemDirectoryHandle>;
+  }
+  
+  interface FileSystemDirectoryHandle {
+    entries(): AsyncIterableIterator<[string, FileSystemFileHandle | FileSystemDirectoryHandle]>;
   }
 }
 
-interface FileSystemHandle {
-  kind: 'file' | 'directory';
-  name: string;
-}
-
-interface FileSystemFileHandle extends FileSystemHandle {
-  kind: 'file';
-  getFile(): Promise<File>;
-}
-
-interface FileSystemDirectoryHandle extends FileSystemHandle {
-  kind: 'directory';
-  entries(): AsyncIterableIterator<[string, FileSystemHandle]>;
-  getFileHandle(name: string): Promise<FileSystemFileHandle>;
-  getDirectoryHandle(name: string): Promise<FileSystemDirectoryHandle>;
-}
-
-interface AutoImportState {
-  directoryHandle: FileSystemDirectoryHandle | null;
-  isWatching: boolean;
-  lastScan: Date | null;
-  fileCount: number;
-  interval: number | null;
-}
-
-interface ImportResult {
-  success: boolean;
-  entriesProcessed: number;
-  entriesImported: number;
-  errors: string[];
-  duplicates: number;
-  newFiles: string[];
-}
-
-interface ParsedEntry {
-  content: string;
-  date?: string;
-  title?: string;
-  mood?: number;
-  tags?: string[];
-  fileName?: string;
-}
-
 export const AutoImportJournalFiles: React.FC = () => {
-  const { importJournalEntries, journalEntries, addNotification } = useAppStore();
+  const { addJournalEntry, journalEntries } = useAppStore();
+  const { success, error, info } = useNotificationHelpers();
+  
   const [isScanning, setIsScanning] = useState(false);
-  const [autoImport, setAutoImport] = useState<AutoImportState>({
-    directoryHandle: null,
-    isWatching: false,
-    lastScan: null,
-    fileCount: 0,
-    interval: null
+  const [isAutoMode, setIsAutoMode] = useState(false);
+  const [scanInterval, setScanInterval] = useState(30); // seconds
+  const [stats, setStats] = useState<AutoImportStats>({
+    totalScanned: 0,
+    newImported: 0,
+    duplicatesSkipped: 0,
+    errors: 0,
+    lastScanTime: null
   });
-  const [processedFiles, setProcessedFiles] = useState<Set<string>>(new Set());
-  const [lastResult, setLastResult] = useState<ImportResult | null>(null);
+  
+  const intervalRef = useRef<number | null>(null);
 
   // Check if File System Access API is supported
-  const isSupported = typeof window !== 'undefined' && 'showDirectoryPicker' in window;
+  const isFileSystemSupported = 'showDirectoryPicker' in window;
 
-  // Load processed files from localStorage
-  useEffect(() => {
-    const stored = localStorage.getItem('inner-guide-processed-files');
-    if (stored) {
-      try {
-        setProcessedFiles(new Set(JSON.parse(stored)));
-      } catch (error) {
-        console.error('Error loading processed files:', error);
-      }
-    }
-  }, []);
-
-  // Save processed files to localStorage
-  const saveProcessedFiles = useCallback((files: Set<string>) => {
-    localStorage.setItem('inner-guide-processed-files', JSON.stringify(Array.from(files)));
-  }, []);
-
-  // Enhanced parsing for Auto Call format
-  const parseJournalFile = useCallback((content: string, filename: string): ParsedEntry[] => {
-    const entries: ParsedEntry[] = [];
-    const fileExtension = filename.split('.').pop()?.toLowerCase();
-
+  const processJSONFile = async (file: File): Promise<any[]> => {
     try {
-      if (fileExtension === 'json') {
-        const jsonData = JSON.parse(content);
-        if (Array.isArray(jsonData)) {
-          entries.push(...jsonData.map(entry => ({
-            content: entry.content || entry.text || entry.body || '',
-            date: entry.date || entry.created_at || entry.timestamp,
-            title: entry.title || entry.subject,
-            mood: entry.mood || entry.rating,
-            tags: [...(entry.tags || []), 'auto-imported'],
-            fileName: filename
-          })));
-        } else if (jsonData.content || jsonData.text) {
-          entries.push({
-            content: jsonData.content || jsonData.text || '',
-            date: jsonData.date || jsonData.created_at,
-            title: jsonData.title,
-            mood: jsonData.mood,
-            tags: [...(jsonData.tags || []), 'auto-imported'],
-            fileName: filename
-          });
-        }
-      } else if (fileExtension === 'txt' || fileExtension === 'md') {
-        // Parse text files with Auto Call specific patterns
-        const lines = content.split('\n');
-        let currentEntry: ParsedEntry = { content: '', fileName: filename };
-        
-        // Try to extract date from filename
-        const dateFromFilename = filename.match(/(\d{4}-\d{2}-\d{2})/);
-        if (dateFromFilename) {
-          currentEntry.date = dateFromFilename[1];
-        }
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          
-          // Auto Call date patterns
-          const dateMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4}|\w+ \d{1,2}, \d{4})/);
-          if (dateMatch && currentEntry.content) {
-            entries.push({...currentEntry, tags: [...(currentEntry.tags || []), 'auto-imported']});
-            currentEntry = { content: '', date: dateMatch[1], fileName: filename };
-          } else if (dateMatch) {
-            currentEntry.date = dateMatch[1];
-          }
-
-          // Auto Call specific patterns
-          if (trimmed.startsWith('Entry:') || trimmed.startsWith('Journal:')) {
-            currentEntry.title = trimmed.replace(/^(Entry|Journal):\s*/i, '');
-          } else if (trimmed.match(/mood:\s*(\d+)/i)) {
-            currentEntry.mood = parseInt(trimmed.match(/mood:\s*(\d+)/i)![1]);
-          } else if (trimmed.match(/tags?:\s*(.+)/i)) {
-            const tags = trimmed.match(/tags?:\s*(.+)/i)![1].split(',').map(t => t.trim());
-            currentEntry.tags = [...tags, 'auto-imported'];
-          } else if (trimmed && !trimmed.startsWith('Entry:') && !trimmed.startsWith('Mood:') && !trimmed.startsWith('Tag')) {
-            currentEntry.content += (currentEntry.content ? '\n' : '') + line;
-          }
-        }
-
-        if (currentEntry.content) {
-          entries.push({...currentEntry, tags: [...(currentEntry.tags || []), 'auto-imported']});
-        }
-      } else {
-        // Fallback for any other file type
-        entries.push({
-          content: content,
-          date: new Date().toISOString().split('T')[0],
-          title: `Auto Import: ${filename}`,
-          tags: ['auto-imported'],
-          fileName: filename
-        });
+      const text = await file.text();
+      const data = JSON.parse(text);
+      
+      // Handle different JSON structures
+      if (Array.isArray(data)) {
+        return data;
+      } else if (data.entries && Array.isArray(data.entries)) {
+        return data.entries;
+      } else if (data.transcription || data.content || data.text) {
+        // Single entry format
+        return [data];
       }
-    } catch (error) {
-      console.error('Parse error:', error);
-      entries.push({
-        content: content,
-        title: `Auto Import: ${filename}`,
-        date: new Date().toISOString().split('T')[0],
-        tags: ['auto-imported', 'parse-error'],
-        fileName: filename
-      });
+      
+      return [];
+    } catch (err) {
+      console.error('Error processing JSON file:', err);
+      return [];
     }
+  };
 
-    return entries.filter(entry => entry.content?.trim());
-  }, []);
-
-  // Check for duplicates
-  const isDuplicate = useCallback((entry: ParsedEntry): boolean => {
-    return journalEntries.some(existing => 
-      existing.content.trim() === entry.content.trim() &&
-      existing.date === entry.date
-    );
-  }, [journalEntries]);
-
-  // Scan directory for new files
-  const scanDirectory = useCallback(async (directoryHandle: FileSystemDirectoryHandle): Promise<ParsedEntry[]> => {
-    const allEntries: ParsedEntry[] = [];
-    let fileCount = 0;
-
-    try {
-      for await (const [name, handle] of directoryHandle.entries()) {
-        if (handle.kind === 'file') {
-          const isJournalFile = /\.(txt|md|json|csv)$/i.test(name);
-          
-          if (isJournalFile) {
-            fileCount++;
-            const fileHandle = handle as FileSystemFileHandle;
-            const file = await fileHandle.getFile();
-            const fileKey = `${file.name}-${file.lastModified}-${file.size}`;
-            
-            // Skip if already processed
-            if (!processedFiles.has(fileKey)) {
-              const content = await file.text();
-              const entries = parseJournalFile(content, file.name);
-              allEntries.push(...entries.map(e => ({...e, fileKey})));
-            }
-          }
-        }
-      }
-
-      setAutoImport(prev => ({
-        ...prev,
-        lastScan: new Date(),
-        fileCount
-      }));
-
-    } catch (error) {
-      console.error('Scan error:', error);
-      throw error;
-    }
-
-    return allEntries;
-  }, [parseJournalFile, processedFiles]);
-
-  // Process and import entries
-  const processEntries = useCallback(async (entries: ParsedEntry[]): Promise<ImportResult> => {
-    const result: ImportResult = {
-      success: true,
-      entriesProcessed: entries.length,
-      entriesImported: 0,
-      errors: [],
-      duplicates: 0,
-      newFiles: []
-    };
-
-    const newProcessedFiles = new Set(processedFiles);
-    const entriesToImport: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>[] = [];
+  const processEntries = async (entries: any[]): Promise<{ imported: number; duplicates: number; errors: number }> => {
+    let imported = 0;
+    let duplicates = 0;
+    let errors = 0;
 
     for (const entry of entries) {
       try {
-        if (isDuplicate(entry)) {
-          result.duplicates++;
-          continue;
-        }
-
-        const journalEntry: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'> = {
-          title: entry.title || `Auto Import: ${entry.fileName}`,
-          content: entry.content,
+        // Create a standardized entry format
+        const journalEntry = {
+          title: entry.title || 'Imported Entry',
+          content: entry.transcription || entry.content || entry.text || '',
           date: entry.date || new Date().toISOString().split('T')[0],
           mood: entry.mood || 3,
-          tags: entry.tags || ['auto-imported']
+          tags: entry.tags || [],
+          location: entry.location || undefined
         };
 
-        entriesToImport.push(journalEntry);
-        
-        if (entry.fileName && !result.newFiles.includes(entry.fileName)) {
-          result.newFiles.push(entry.fileName);
+        // Check for duplicates based on content and date
+        const isDuplicate = journalEntries.some(existing => 
+          existing.content === journalEntry.content && 
+          existing.date === journalEntry.date
+        );
+
+        if (isDuplicate) {
+          duplicates++;
+        } else if (journalEntry.content.trim()) {
+          await addJournalEntry(journalEntry);
+          imported++;
         }
+      } catch (err) {
+        console.error('Error processing entry:', err);
+        errors++;
+      }
+    }
 
-        // Mark as processed
-        if ((entry as any).fileKey) {
-          newProcessedFiles.add((entry as any).fileKey);
+    return { imported, duplicates, errors };
+  };
+
+  const scanDirectory = async (directoryHandle: FileSystemDirectoryHandle): Promise<File[]> => {
+    const jsonFiles: File[] = [];
+    
+    for await (const [name, handle] of directoryHandle.entries()) {
+      if (handle.kind === 'file' && name.toLowerCase().endsWith('.json')) {
+        try {
+          const file = await handle.getFile();
+          jsonFiles.push(file);
+        } catch (err) {
+          console.error(`Error reading file ${name}:`, err);
         }
-
-      } catch (error) {
-        console.error('Import error:', error);
-        result.errors.push(`Failed to import from ${entry.fileName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        result.success = false;
       }
     }
+    
+    return jsonFiles;
+  };
 
-    // REAL DATA ONLY: Import all entries at once with automatic AI analysis
-    if (entriesToImport.length > 0) {
-      try {
-        await importJournalEntries(entriesToImport);
-        result.entriesImported = entriesToImport.length;
-      } catch (error) {
-        result.errors.push(`Failed to import entries: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        result.success = false;
-      }
-    }
-
-    setProcessedFiles(newProcessedFiles);
-    saveProcessedFiles(newProcessedFiles);
-    return result;
-  }, [importJournalEntries, isDuplicate, processedFiles, saveProcessedFiles]);
-
-  // Select directory
-  const selectDirectory = useCallback(async () => {
-    if (!isSupported) {
-      addNotification({
-        type: 'error',
-        title: 'Not Supported',
-        message: 'File System Access API not supported in this browser'
-      });
-      return;
-    }
-
-    try {
-      const directoryHandle = await window.showDirectoryPicker!({
-        mode: 'read',
-        startIn: 'documents'
-      });
-
-      setAutoImport(prev => ({
-        ...prev,
-        directoryHandle
-      }));
-
-      addNotification({
-        type: 'success',
-        title: 'Directory Connected',
-        message: `Connected to ${directoryHandle.name} directory`
-      });
-
-    } catch (error) {
-      if (error instanceof Error && error.name !== 'AbortError') {
-        addNotification({
-          type: 'error',
-          title: 'Selection Failed',
-          message: error.message
-        });
-      }
-    }
-  }, [isSupported, addNotification]);
-
-  // Manual scan
-  const manualScan = useCallback(async () => {
-    if (!autoImport.directoryHandle) {
-      await selectDirectory();
+  const performManualScan = useCallback(async () => {
+    if (!isFileSystemSupported) {
+      error('Browser not supported', 'This browser does not support automatic file system access.');
       return;
     }
 
     setIsScanning(true);
+    let totalScanned = 0;
+    let newImported = 0;
+    let duplicatesSkipped = 0;
+    let errorCount = 0;
+
     try {
-      const entries = await scanDirectory(autoImport.directoryHandle);
-      
-      if (entries.length === 0) {
-        addNotification({
-          type: 'info',
-          title: 'No New Files',
-          message: 'No new journal files found to import'
-        });
-      } else {
-        const result = await processEntries(entries);
-        setLastResult(result);
-        
-        addNotification({
-          type: result.success ? 'success' : 'warning',
-          title: result.success ? 'Import Complete' : 'Import Partial',
-          message: `Imported ${result.entriesImported} entries from ${result.newFiles.length} files`
-        });
-      }
-    } catch (error) {
-      console.error('Manual scan failed:', error);
-      addNotification({
-        type: 'error',
-        title: 'Scan Failed',
-        message: error instanceof Error ? error.message : 'Unknown error'
+      // Request directory access
+      const directoryHandle = await window.showDirectoryPicker({
+        mode: 'read'
       });
+      
+      info('Scanning directory', `Scanning for JSON files in selected directory...`);
+      
+      const jsonFiles = await scanDirectory(directoryHandle);
+      totalScanned = jsonFiles.length;
+      
+      if (jsonFiles.length === 0) {
+        info('No files found', 'No JSON files found in the selected directory.');
+        return;
+      }
+
+      // Process each JSON file
+      for (const file of jsonFiles) {
+        try {
+          const entries = await processJSONFile(file);
+          const result = await processEntries(entries);
+          
+          newImported += result.imported;
+          duplicatesSkipped += result.duplicates;
+          errorCount += result.errors;
+        } catch (err) {
+          console.error(`Error processing file ${file.name}:`, err);
+          errorCount++;
+        }
+      }
+
+      // Update stats
+      setStats({
+        totalScanned,
+        newImported,
+        duplicatesSkipped,
+        errors: errorCount,
+        lastScanTime: new Date()
+      });
+
+      if (newImported > 0) {
+        success(
+          `Import complete!`, 
+          `Imported ${newImported} new entries from ${totalScanned} files. ${duplicatesSkipped} duplicates skipped.`
+        );
+      } else {
+        info(
+          'No new entries', 
+          `Scanned ${totalScanned} files but found no new entries to import.`
+        );
+      }
+
+    } catch (err) {
+      const errorObj = err as Error;
+      if (errorObj.name === 'AbortError') {
+        info('Scan cancelled', 'Directory scan was cancelled by user.');
+      } else {
+        console.error('Scan failed:', err);
+        error('Scan failed', 'Unable to scan the selected directory. Please try again.');
+      }
     } finally {
       setIsScanning(false);
     }
-  }, [autoImport.directoryHandle, selectDirectory, scanDirectory, processEntries, addNotification]);
+  }, [addJournalEntry, journalEntries, success, error, info]);
 
-  // Auto scan with interval
-  const startAutoScan = useCallback(() => {
-    if (!autoImport.directoryHandle) return;
-
-    const interval = setInterval(() => {
-      if (!isScanning) {
-        manualScan();
+  const toggleAutoMode = useCallback(() => {
+    if (isAutoMode) {
+      // Stop auto mode
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
-    }, 30000); // Scan every 30 seconds
-
-    setAutoImport(prev => ({
-      ...prev,
-      isWatching: true,
-      interval: interval as any
-    }));
-  }, [autoImport.directoryHandle, isScanning, manualScan]);
-
-  // Stop auto scan
-  const stopAutoScan = useCallback(() => {
-    if (autoImport.interval) {
-      clearInterval(autoImport.interval);
+      setIsAutoMode(false);
+      info('Auto-import stopped', 'Automatic scanning has been disabled.');
+    } else {
+      // Start auto mode
+      setIsAutoMode(true);
+      info('Auto-import started', `Automatic scanning enabled. Will scan every ${scanInterval} seconds.`);
+      
+      // Start the interval
+      intervalRef.current = window.setInterval(async () => {
+        if (!isScanning) {
+          await performManualScan();
+        }
+      }, scanInterval * 1000);
     }
-    
-    setAutoImport(prev => ({
-      ...prev,
-      isWatching: false,
-      interval: null
-    }));
-  }, [autoImport.interval]);
+  }, [isAutoMode, scanInterval, performManualScan, isScanning, info]);
 
-  // Cleanup on unmount
+  // Cleanup interval on unmount
   useEffect(() => {
     return () => {
-      if (autoImport.interval) {
-        clearInterval(autoImport.interval);
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
       }
     };
-  }, [autoImport.interval]);
+  }, []);
 
-  if (!isSupported) {
+  if (!isFileSystemSupported) {
     return (
-      <div className="p-6 bg-gradient-to-br from-slate-800/40 to-slate-700/40 backdrop-blur-sm rounded-2xl border border-red-500/20">
-        <div className="flex items-center space-x-3 mb-4">
-          <AlertCircle className="w-6 h-6 text-red-400" />
-          <h3 className="text-lg font-semibold text-white">Auto Import Not Supported</h3>
+      <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-6">
+        <div className="flex items-start space-x-3">
+          <AlertCircle className="w-5 h-5 text-yellow-400 mt-0.5 flex-shrink-0" />
+          <div>
+            <h4 className="font-semibold text-yellow-300 mb-2">Browser Not Supported</h4>
+            <p className="text-sm text-gray-300 mb-4">
+              Your browser does not support the File System Access API required for automatic directory monitoring. 
+              Please use Chrome, Edge, or another Chromium-based browser for this feature.
+            </p>
+            <p className="text-xs text-gray-400">
+              You can still use the manual import feature to upload individual files.
+            </p>
+          </div>
         </div>
-        <p className="text-slate-300">
-          This browser doesn't support the File System Access API required for auto-importing journal files.
-          Please use Chrome, Edge, or another Chromium-based browser.
-        </p>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h3 className="text-xl font-bold text-white flex items-center space-x-2">
-          <FolderOpen className="w-6 h-6 text-violet-400" />
-          <span>Auto Journal Import</span>
-        </h3>
-      </div>
-
-      {/* Main Controls */}
-      <div className="bg-gradient-to-br from-slate-800/40 to-slate-700/40 backdrop-blur-sm rounded-2xl border border-violet-500/20 p-6">
-        <div className="space-y-4">
-          {/* Directory Selection */}
-          <div className="flex items-center justify-between">
+      {/* Auto Import Controls */}
+      <div className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-xl p-6 border border-blue-500/20">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center space-x-3">
+            <FolderOpen className="w-5 h-5 text-blue-400" />
             <div>
-              <h4 className="text-lg font-medium text-white">Source Directory</h4>
-              <p className="text-sm text-slate-400">
-                {autoImport.directoryHandle 
-                  ? `Connected to: ${autoImport.directoryHandle.name}`
-                  : 'No directory selected'
-                }
-              </p>
+              <h4 className="font-semibold text-blue-300">Auto Import from Directory</h4>
+              <p className="text-sm text-gray-400">Automatically scan and import journal files</p>
             </div>
+          </div>
+          
+          <div className="flex items-center space-x-3">
             <button
-              onClick={selectDirectory}
-              className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl transition-colors"
+              onClick={performManualScan}
+              disabled={isScanning || isAutoMode}
+              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {autoImport.directoryHandle ? 'Change' : 'Select'} Directory
+              {isScanning ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <FolderOpen className="w-4 h-4" />
+              )}
+              <span>{isScanning ? 'Scanning...' : 'Scan Directory'}</span>
+            </button>
+            
+            <button
+              onClick={toggleAutoMode}
+              disabled={isScanning}
+              className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                isAutoMode 
+                  ? 'bg-red-600 hover:bg-red-700 text-white' 
+                  : 'bg-green-600 hover:bg-green-700 text-white'
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
+              {isAutoMode ? (
+                <Pause className="w-4 h-4" />
+              ) : (
+                <Play className="w-4 h-4" />
+              )}
+              <span>{isAutoMode ? 'Stop Auto' : 'Start Auto'}</span>
             </button>
           </div>
-
-          {/* Scan Controls */}
-          {autoImport.directoryHandle && (
-            <div className="flex items-center justify-between pt-4 border-t border-slate-600/30">
-              <div className="flex items-center space-x-4">
-                <button
-                  onClick={manualScan}
-                  disabled={isScanning}
-                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white rounded-xl transition-colors"
-                >
-                  <RefreshCw className={`w-4 h-4 ${isScanning ? 'animate-spin' : ''}`} />
-                  <span>{isScanning ? 'Scanning...' : 'Scan Now'}</span>
-                </button>
-
-                <button
-                  onClick={autoImport.isWatching ? stopAutoScan : startAutoScan}
-                  className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-colors ${
-                    autoImport.isWatching 
-                      ? 'bg-red-600 hover:bg-red-700 text-white' 
-                      : 'bg-green-600 hover:bg-green-700 text-white'
-                  }`}
-                >
-                  {autoImport.isWatching ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  <span>{autoImport.isWatching ? 'Stop Watching' : 'Start Watching'}</span>
-                </button>
-              </div>
-
-              {autoImport.lastScan && (
-                <div className="flex items-center space-x-2 text-sm text-slate-400">
-                  <Clock className="w-4 h-4" />
-                  <span>Last scan: {autoImport.lastScan.toLocaleTimeString()}</span>
-                </div>
-              )}
-            </div>
-          )}
         </div>
+
+        {/* Auto Mode Settings */}
+        {!isAutoMode && (
+          <div className="space-y-4">
+            <div className="flex items-center space-x-4">
+              <label className="text-sm font-medium text-gray-300">Scan Interval:</label>
+              <select
+                value={scanInterval}
+                onChange={(e) => setScanInterval(Number(e.target.value))}
+                className="bg-slate-700 border border-slate-600 rounded px-3 py-1 text-white text-sm"
+              >
+                <option value={10}>10 seconds</option>
+                <option value={30}>30 seconds</option>
+                <option value={60}>1 minute</option>
+                <option value={300}>5 minutes</option>
+                <option value={900}>15 minutes</option>
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* Status Indicator */}
+        {isAutoMode && (
+          <div className="flex items-center space-x-2 mt-4 p-3 bg-green-500/10 rounded-lg border border-green-500/20">
+            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+            <span className="text-sm text-green-300">
+              Auto-import active (scanning every {scanInterval} seconds)
+            </span>
+          </div>
+        )}
       </div>
 
-      {/* Status */}
-      {lastResult && (
-        <div className={`p-4 rounded-xl border ${
-          lastResult.success 
-            ? 'bg-green-500/10 border-green-500/30 text-green-300'
-            : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300'
-        }`}>
-          <div className="flex items-center space-x-2 mb-2">
-            <CheckCircle className="w-5 h-5" />
-            <span className="font-medium">Import Results</span>
+      {/* Import Statistics */}
+      {stats.lastScanTime && (
+        <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-600/30">
+          <div className="flex items-center space-x-3 mb-4">
+            <CheckCircle className="w-5 h-5 text-green-400" />
+            <h4 className="font-semibold text-gray-200">Last Scan Results</h4>
           </div>
-          <div className="text-sm space-y-1">
-            <p>Processed: {lastResult.entriesProcessed} entries</p>
-            <p>Imported: {lastResult.entriesImported} new entries</p>
-            <p>Duplicates skipped: {lastResult.duplicates}</p>
-            {lastResult.newFiles.length > 0 && (
-              <p>Files: {lastResult.newFiles.join(', ')}</p>
-            )}
-            {lastResult.errors.length > 0 && (
-              <div className="text-red-400">
-                <p>Errors:</p>
-                <ul className="list-disc list-inside ml-2">
-                  {lastResult.errors.map((error, i) => (
-                    <li key={i}>{error}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
+          
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-blue-300">{stats.totalScanned}</div>
+              <div className="text-xs text-gray-400">Files Scanned</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-green-300">{stats.newImported}</div>
+              <div className="text-xs text-gray-400">New Imported</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-yellow-300">{stats.duplicatesSkipped}</div>
+              <div className="text-xs text-gray-400">Duplicates Skipped</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-red-300">{stats.errors}</div>
+              <div className="text-xs text-gray-400">Errors</div>
+            </div>
+          </div>
+          
+          <div className="flex items-center space-x-2 text-sm text-gray-400">
+            <Clock className="w-4 h-4" />
+            <span>Last scan: {stats.lastScanTime.toLocaleString()}</span>
           </div>
         </div>
       )}
 
-      {/* Info */}
-      <div className="text-sm text-slate-400 bg-slate-800/30 p-4 rounded-xl">
-        <h5 className="font-medium text-slate-300 mb-2">Supported File Formats:</h5>
-        <ul className="space-y-1">
-          <li>• <strong>JSON:</strong> Structured journal data with metadata</li>
-          <li>• <strong>TXT/MD:</strong> Plain text with auto-detected dates and mood ratings</li>
-          <li>• <strong>Auto Call Format:</strong> Specialized parsing for Auto Call directory structure</li>
+      {/* Instructions */}
+      <div className="bg-slate-800/30 rounded-xl p-4 border border-slate-600/20">
+        <h5 className="font-medium text-gray-200 mb-2">How Auto Import Works:</h5>
+        <ul className="text-sm text-gray-400 space-y-1">
+          <li>• Click "Scan Directory" to select your Auto Call export folder</li>
+          <li>• Use "Start Auto" to continuously monitor the directory for new files</li>
+          <li>• Supports JSON files with transcription, content, or text fields</li>
+          <li>• Automatically detects and skips duplicate entries</li>
+          <li>• Set your preferred scan interval (10 seconds to 15 minutes)</li>
         </ul>
-        <p className="mt-3 text-xs">
-          All imported entries are automatically analyzed with AI insights when available.
-        </p>
       </div>
     </div>
   );

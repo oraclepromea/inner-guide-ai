@@ -660,6 +660,23 @@ export const useAppStore = create<AppState>((set, get) => ({
         preferences: parsedData.preferences
       });
 
+      // Create backup copies of imported journal entries
+      if (parsedData.journalEntries && parsedData.journalEntries.length > 0) {
+        for (const entry of parsedData.journalEntries) {
+          try {
+            await db.importedJournalBackups.add({
+              ...entry,
+              originalImportDate: new Date().toISOString(),
+              importSource: 'manual-full-import',
+              importMethod: 'manual',
+              originalFileName: 'full-data-import.json'
+            });
+          } catch (error) {
+            console.error('Failed to create backup for entry:', entry.id, error);
+          }
+        }
+      }
+
       // REAL DATA ONLY: Analyze imported journal entries with AI if configured
       if (parsedData.journalEntries && parsedData.journalEntries.length > 0) {
         setTimeout(async () => {
@@ -678,7 +695,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().addNotification({
         type: 'success',
         title: 'Data Imported',
-        message: 'Your data has been successfully imported'
+        message: `Your data has been successfully imported with ${parsedData.journalEntries?.length || 0} entries backed up`
       });
     } catch (error) {
       console.error('Failed to import data:', error);
@@ -690,10 +707,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  // REAL DATA ONLY: Import individual journal entries with AI analysis
-  importJournalEntries: async (entries: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>[]) => {
+  // REAL DATA ONLY: Import individual journal entries with AI analysis and backup creation
+  importJournalEntries: async (entries: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>[], importSource?: string) => {
     try {
       const importedEntries: JournalEntry[] = [];
+      let backupCount = 0;
       
       for (const entry of entries) {
         const now = new Date();
@@ -704,9 +722,25 @@ export const useAppStore = create<AppState>((set, get) => ({
           tags: [...(entry.tags || []), 'auto-imported'] // Tag as auto-imported
         };
 
+        // Add to main journal entries
         const id = await db.journalEntries.add(newEntry as any);
         const savedEntry = { ...newEntry, id: id.toString() };
         importedEntries.push(savedEntry);
+
+        // Create backup copy
+        try {
+          await db.importedJournalBackups.add({
+            ...newEntry,
+            id: undefined, // Let the backup table generate its own ID
+            originalImportDate: now.toISOString(),
+            importSource: importSource || 'journal-import',
+            importMethod: 'auto',
+            originalFileName: importSource
+          });
+          backupCount++;
+        } catch (error) {
+          console.error('Failed to create backup for entry:', error);
+        }
 
         // Trigger AI analysis for imported entry
         if (newEntry.content && !newEntry.aiInsights) {
@@ -719,6 +753,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       set(state => ({
         journalEntries: [...importedEntries, ...state.journalEntries]
       }));
+
+      get().addNotification({
+        type: 'success',
+        title: 'Entries Imported',
+        message: `${importedEntries.length} entries imported and ${backupCount} backups created`
+      });
 
       return importedEntries;
     } catch (error) {
