@@ -179,6 +179,30 @@
       inset 0 1px 0 rgba(255, 255, 255, 0.3);
   }
 
+  .btn-success {
+    background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
+    border: 1px solid rgba(16, 185, 129, 0.8);
+    color: #ffffff;
+    padding: 1rem 2rem;
+    border-radius: 1.25rem;
+    font-weight: 700;
+    font-size: 0.875rem;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    box-shadow: 
+      0 10px 25px -5px rgba(16, 185, 129, 0.4),
+      0 0 0 1px rgba(16, 185, 129, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .btn-success:hover {
+    transform: translateY(-2px);
+    box-shadow: 
+      0 15px 35px -5px rgba(16, 185, 129, 0.5),
+      0 0 30px rgba(16, 185, 129, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  }
+
   .btn-danger {
     background: linear-gradient(135deg, #ef4444 0%, #dc2626 50%, #b91c1c 100%);
     border: 1px solid rgba(239, 68, 68, 0.8);
@@ -225,6 +249,41 @@
   }
 
   .input-field:focus {
+    outline: none;
+    border-color: rgba(139, 92, 246, 0.8);
+    box-shadow: 
+      0 8px 25px -5px rgba(139, 92, 246, 0.3),
+      0 0 0 3px rgba(139, 92, 246, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    background: linear-gradient(135deg, 
+      rgba(30, 27, 75, 0.9) 0%, 
+      rgba(49, 46, 129, 0.7) 100%);
+  }
+
+  /* Enhanced Textarea Fields */
+  .textarea-field {
+    background: linear-gradient(135deg, 
+      rgba(30, 27, 75, 0.8) 0%, 
+      rgba(49, 46, 129, 0.6) 100%);
+    border: 2px solid rgba(139, 92, 246, 0.3);
+    border-radius: 1rem;
+    padding: 1rem 1.5rem;
+    color: #ffffff;
+    font-size: 0.875rem;
+    backdrop-filter: blur(10px);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 
+      0 4px 20px -2px rgba(0, 0, 0, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    resize: vertical;
+    min-height: 120px;
+  }
+
+  .textarea-field::placeholder {
+    color: rgba(203, 213, 225, 0.6);
+  }
+
+  .textarea-field:focus {
     outline: none;
     border-color: rgba(139, 92, 246, 0.8);
     box-shadow: 

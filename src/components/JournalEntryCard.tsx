@@ -59,6 +59,13 @@ const getCountryFlag = (countryCode: string): string => {
 };
 
 export const JournalEntryCard: React.FC<JournalEntryCardProps> = ({ entry }) => {
+  console.log('🔍 JournalEntryCard rendered with entry:', { 
+    id: entry.id, 
+    title: entry.title,
+    hasContent: !!entry.content,
+    idType: typeof entry.id 
+  });
+
   const { deleteJournalEntry, updateJournalEntry, generateDeepInsight, setActiveTab } = useAppStore();
   const [isExpanded, setIsExpanded] = useState(false);
   const [showAIInsights, setShowAIInsights] = useState(false);
@@ -75,10 +82,13 @@ export const JournalEntryCard: React.FC<JournalEntryCardProps> = ({ entry }) => 
   const [editedMood, setEditedMood] = useState(entry.mood);
   const [editedTags, setEditedTags] = useState(entry.tags.join(', '));
 
-  const handleDelete = async () => {
-    console.log('Delete button clicked, entry.id:', entry.id);
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('🗑️ Delete button clicked, entry.id:', entry.id, 'type:', typeof entry.id);
+    
     if (!entry.id) {
-      console.error('Cannot delete entry: entry.id is missing');
+      console.error('❌ Cannot delete entry: entry.id is missing');
       alert('Cannot delete entry: Invalid entry ID');
       return;
     }
@@ -86,9 +96,11 @@ export const JournalEntryCard: React.FC<JournalEntryCardProps> = ({ entry }) => 
     if (window.confirm('Are you sure you want to delete this entry? This action cannot be undone.')) {
       setIsDeleting(true);
       try {
+        console.log('🔄 Calling deleteJournalEntry with ID:', entry.id.toString());
         await deleteJournalEntry(entry.id.toString());
+        console.log('✅ Entry deleted successfully');
       } catch (error) {
-        console.error('Failed to delete entry:', error);
+        console.error('❌ Failed to delete entry:', error);
         alert('Failed to delete entry. Please try again.');
       } finally {
         setIsDeleting(false);
@@ -96,24 +108,44 @@ export const JournalEntryCard: React.FC<JournalEntryCardProps> = ({ entry }) => 
     }
   };
 
-  const handleAnalyze = async () => {
-    console.log('AI Insights button clicked, entry.id:', entry.id);
+  const handleAnalyze = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('🧠 AI Insights button clicked, entry.id:', entry.id, 'type:', typeof entry.id);
+    
     if (!entry.id) {
-      console.error('Cannot analyze entry: entry.id is missing');
+      console.error('❌ Cannot analyze entry: entry.id is missing');
       alert('Cannot analyze entry: Invalid entry ID');
       return;
     }
     
     setIsAnalyzing(true);
     try {
+      console.log('🔄 Calling generateDeepInsight with entry');
       await generateDeepInsight(entry, 'Friend');
+      console.log('🔄 Navigating to AI insights tab');
       setActiveTab('ai-insights');
+      console.log('✅ AI insights generation completed');
     } catch (error) {
-      console.error('Failed to analyze entry:', error);
+      console.error('❌ Failed to analyze entry:', error);
       alert('Failed to analyze entry. Please check your OpenRouter API configuration in Settings.');
     } finally {
       setIsAnalyzing(false);
     }
+  };
+
+  const handleEdit = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('✏️ Edit button clicked, entering edit mode');
+    setIsEditing(true);
+  };
+
+  const handleExpand = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('👁️ Expand button clicked, current state:', isExpanded);
+    setIsExpanded(!isExpanded);
   };
 
   const handleSaveEdit = async () => {
@@ -333,10 +365,16 @@ export const JournalEntryCard: React.FC<JournalEntryCardProps> = ({ entry }) => 
             {isEditing ? (
               <>
                 <button
-                  onClick={handleSaveEdit}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('💾 Save button clicked');
+                    handleSaveEdit();
+                  }}
                   disabled={isSaving}
                   className="btn-success px-4 py-2 text-sm flex items-center space-x-2 disabled:opacity-50"
                   title="Save changes"
+                  style={{ pointerEvents: 'auto', zIndex: 10 }}
                 >
                   {isSaving ? (
                     <>
@@ -351,10 +389,16 @@ export const JournalEntryCard: React.FC<JournalEntryCardProps> = ({ entry }) => 
                   )}
                 </button>
                 <button
-                  onClick={handleCancelEdit}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('❌ Cancel button clicked');
+                    handleCancelEdit();
+                  }}
                   disabled={isSaving}
                   className="btn-secondary px-4 py-2 text-sm flex items-center space-x-2 disabled:opacity-50"
                   title="Cancel editing"
+                  style={{ pointerEvents: 'auto', zIndex: 10 }}
                 >
                   <span>❌</span>
                   <span>Cancel</span>
@@ -363,18 +407,20 @@ export const JournalEntryCard: React.FC<JournalEntryCardProps> = ({ entry }) => 
             ) : (
               <>
                 <button
-                  onClick={() => setIsExpanded(!isExpanded)}
-                  className="bg-blue-600/90 hover:bg-blue-700 text-white border border-blue-500/50 px-3 py-2 text-sm flex items-center space-x-2 rounded-lg transition-colors disabled:opacity-50"
+                  onClick={handleExpand}
+                  className="btn-secondary px-3 py-2 text-sm flex items-center space-x-2 transition-colors"
                   title={isExpanded ? 'Show preview' : 'Show full entry'}
+                  style={{ pointerEvents: 'auto', zIndex: 10 }}
                 >
                   <span>{isExpanded ? '👁️‍🗨️' : '👁️'}</span>
                   <span className="hidden sm:inline">{isExpanded ? 'Preview' : 'Full'}</span>
                 </button>
                 
                 <button
-                  onClick={() => setIsEditing(true)}
-                  className="bg-green-600/90 hover:bg-green-700 text-white border border-green-500/50 px-3 py-2 text-sm flex items-center space-x-2 rounded-lg transition-colors disabled:opacity-50"
+                  onClick={handleEdit}
+                  className="btn-success px-3 py-2 text-sm flex items-center space-x-2 transition-colors"
                   title="Edit entry"
+                  style={{ pointerEvents: 'auto', zIndex: 10 }}
                 >
                   <Edit className="w-4 h-4" />
                   <span className="hidden sm:inline">Edit</span>
@@ -383,8 +429,9 @@ export const JournalEntryCard: React.FC<JournalEntryCardProps> = ({ entry }) => 
                 <button
                   onClick={handleAnalyze}
                   disabled={isAnalyzing}
-                  className="bg-purple-600/90 hover:bg-purple-700 text-white border border-purple-500/50 px-3 py-2 text-sm flex items-center space-x-2 rounded-lg transition-colors disabled:opacity-50"
+                  className="btn-primary px-3 py-2 text-sm flex items-center space-x-2 disabled:opacity-50 transition-colors"
                   title="AI Insights"
+                  style={{ pointerEvents: 'auto', zIndex: 10 }}
                 >
                   {isAnalyzing ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -397,8 +444,9 @@ export const JournalEntryCard: React.FC<JournalEntryCardProps> = ({ entry }) => 
                 <button
                   onClick={handleDelete}
                   disabled={isDeleting}
-                  className="bg-red-600/90 hover:bg-red-700 text-white border border-red-500/50 px-3 py-2 text-sm flex items-center space-x-2 rounded-lg transition-colors disabled:opacity-50"
+                  className="btn-danger px-3 py-2 text-sm flex items-center space-x-2 disabled:opacity-50 transition-colors"
                   title="Delete entry"
+                  style={{ pointerEvents: 'auto', zIndex: 10 }}
                 >
                   {isDeleting ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
