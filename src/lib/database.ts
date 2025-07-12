@@ -727,5 +727,64 @@ export const dbOperations = {
       console.error('Error checking backup duplicate:', error);
       return false;
     }
+  },
+
+  // Migration utility to fix existing journal entry dates
+  async migrateJournalEntryDates(): Promise<{ updated: number; errors: number }> {
+    try {
+      console.log('🔄 Starting journal entry date migration...');
+      
+      const allEntries = await db.journalEntries.toArray();
+      let updated = 0;
+      let errors = 0;
+      
+      for (const entry of allEntries) {
+        try {
+          // Check if the entry needs migration (createdAt doesn't match the intended date)
+          const entryDate = entry.date;
+          const createdAt = new Date(entry.createdAt);
+          
+          // If the dates don't match (different days), we need to migrate
+          const createdAtDate = createdAt.toISOString().split('T')[0];
+          
+          if (createdAtDate !== entryDate) {
+            // Calculate correct createdAt from entry.date and entry.time
+            let correctCreatedAt: string;
+            
+            if (entry.time) {
+              // Combine date and time for accurate timestamp
+              const combinedDateTime = new Date(`${entryDate}T${entry.time}`);
+              correctCreatedAt = isNaN(combinedDateTime.getTime()) 
+                ? new Date(`${entryDate}T00:00:00`).toISOString()
+                : combinedDateTime.toISOString();
+            } else {
+              // Use the entry date at midnight if no time specified
+              correctCreatedAt = new Date(`${entryDate}T00:00:00`).toISOString();
+            }
+            
+            // Update the entry with correct createdAt
+            await db.journalEntries.update(entry.id!, {
+              createdAt: correctCreatedAt,
+              updatedAt: new Date().toISOString() // Keep current time for updatedAt
+            });
+            
+            updated++;
+            console.log(`✅ Updated entry ${entry.id}: ${createdAtDate} → ${entryDate}`);
+          }
+        } catch (error) {
+          console.error(`❌ Error updating entry ${entry.id}:`, error);
+          errors++;
+        }
+      }
+      
+      // Clear cache after migration
+      dbCache.clear();
+      
+      console.log(`🎉 Migration complete: ${updated} entries updated, ${errors} errors`);
+      return { updated, errors };
+    } catch (error) {
+      console.error('❌ Migration failed:', error);
+      throw new Error('Failed to migrate journal entry dates');
+    }
   }
 };

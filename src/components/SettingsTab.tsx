@@ -370,6 +370,41 @@ export const SettingsTab: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* Date Migration Tool */}
+          <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+            <div className="flex items-start space-x-3">
+              <RefreshCw className="w-5 h-5 text-blue-400 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <h4 className="font-semibold text-blue-300 mb-2">Fix Journal Entry Dates</h4>
+                <p className="text-sm text-gray-400 mb-4">
+                  If your imported journal entries show import dates instead of their original creation dates, 
+                  use this tool to fix them. This will update all entries to use their proper journal dates.
+                </p>
+                
+                <button
+                  onClick={async () => {
+                    try {
+                      await useAppStore.getState().migrateJournalDates();
+                    } catch (error) {
+                      console.error('Migration failed:', error);
+                    }
+                  }}
+                  disabled={dataStats.journalEntries === 0}
+                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  <span>Fix Entry Dates</span>
+                </button>
+                
+                <div className="mt-3 text-xs text-gray-500">
+                  <p>• This will update journal entries to use their actual creation dates</p>
+                  <p>• Safe operation - only updates timestamp metadata</p>
+                  <p>• Your content and other data remains unchanged</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

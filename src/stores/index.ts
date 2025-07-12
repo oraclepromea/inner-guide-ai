@@ -20,7 +20,7 @@ import type {
   TherapistPersonality,
   TabType
 } from '../types';
-import { db } from '../lib/database';
+import { db, dbOperations } from '../lib/database';
 import { aiService } from '../lib/aiService';
 
 // Auto-configure OpenRouter API from environment variables
@@ -983,6 +983,42 @@ export const useAppStore = create<AppState>((set, get) => ({
         title: 'Clear Error',
         message: 'Failed to clear data'
       });
+    }
+  },
+
+  // Fix existing journal entry dates to use proper timestamps
+  migrateJournalDates: async () => {
+    try {
+      set({ isLoading: true });
+      
+      get().addNotification({
+        type: 'info',
+        title: 'Migration Started',
+        message: 'Fixing journal entry dates... This may take a moment.'
+      });
+
+      const result = await dbOperations.migrateJournalEntryDates();
+      
+      // Reload entries to reflect changes
+      await get().getJournalEntries();
+      
+      get().addNotification({
+        type: 'success',
+        title: 'Migration Complete',
+        message: `Successfully updated ${result.updated} journal entries to use proper dates. ${result.errors > 0 ? `${result.errors} errors encountered.` : ''}`
+      });
+
+      return result;
+    } catch (error) {
+      console.error('Failed to migrate journal dates:', error);
+      get().addNotification({
+        type: 'error',
+        title: 'Migration Failed',
+        message: 'Failed to fix journal entry dates. Please try again.'
+      });
+      throw error;
+    } finally {
+      set({ isLoading: false });
     }
   }
 }));

@@ -673,6 +673,7 @@ export interface AppState {
   importData: (data: string) => Promise<void>;
   importJournalEntries: (entries: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>[], importSource?: string) => Promise<JournalEntry[]>;
   clearAllData: () => Promise<void>;
+  migrateJournalDates: () => Promise<{ updated: number; errors: number }>; // Fix existing entries to use proper dates
   
   // Duplicate detection methods
   isDuplicateEntry: (entry: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>, existingEntries: JournalEntry[]) => boolean;
