@@ -880,12 +880,30 @@ export const useAppStore = create<AppState>((set, get) => ({
           continue;
         }
 
-        const now = new Date();
+        // PRESERVE ORIGINAL DATES: Use entry's original date/time instead of current time
+        const originalDate = entry.date || format(new Date(), 'yyyy-MM-dd');
+        const originalTime = entry.time;
+        
+        // Create createdAt from the original entry's date and time
+        let createdAt: string;
+        if (originalTime && originalDate) {
+          // Combine date and time for accurate timestamp
+          const combinedDateTime = new Date(`${originalDate}T${originalTime}`);
+          createdAt = isNaN(combinedDateTime.getTime()) 
+            ? new Date(`${originalDate}T00:00:00`).toISOString()
+            : combinedDateTime.toISOString();
+        } else {
+          // Use the entry date at midnight if no time specified
+          createdAt = new Date(`${originalDate}T00:00:00`).toISOString();
+        }
+
         const newEntry = {
           ...entry,
-          createdAt: now.toISOString(),
-          updatedAt: now.toISOString(),
-          tags: [...(entry.tags || []), 'auto-imported'] // Tag as auto-imported
+          date: originalDate, // Preserve original date
+          time: originalTime, // Preserve original time
+          createdAt, // Use calculated createdAt from original date/time
+          updatedAt: new Date().toISOString(), // Only updatedAt uses current time
+          tags: [...(entry.tags || []), 'imported'] // Tag as imported (not auto-imported)
         };
 
         // Add to main journal entries
@@ -893,14 +911,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         const savedEntry = { ...newEntry, id: id.toString() };
         importedEntries.push(savedEntry);
 
-        // Create backup copy
+        // Create backup copy with preserved dates
         try {
           await db.importedJournalBackups.add({
             ...newEntry,
             id: undefined, // Let the backup table generate its own ID
-            originalImportDate: now.toISOString(),
+            originalImportDate: new Date().toISOString(), // This should be current time
             importSource: importSource || 'journal-import',
-            importMethod: 'auto',
+            importMethod: 'manual',
             originalFileName: importSource
           });
           backupCount++;

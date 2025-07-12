@@ -87,11 +87,42 @@ export const AutoImportJournalFiles: React.FC = () => {
 
     for (const entry of entries) {
       try {
-        // Create a standardized entry format
+        // Extract and parse the original date from the entry
+        let originalDate = entry.date || entry.created_at || entry.timestamp;
+        let originalTime = entry.time;
+        
+        // Handle different date formats and preserve original timestamps
+        if (originalDate) {
+          if (typeof originalDate === 'number') {
+            // Unix timestamp
+            const dateObj = new Date(originalDate);
+            originalDate = dateObj.toISOString().split('T')[0];
+            originalTime = originalTime || dateObj.toTimeString().split(' ')[0];
+          } else if (typeof originalDate === 'string') {
+            // String date - parse and preserve
+            const parsedDate = new Date(originalDate);
+            if (!isNaN(parsedDate.getTime())) {
+              originalDate = parsedDate.toISOString().split('T')[0];
+              // Extract time if it was in the date string and no separate time field
+              if (!originalTime && originalDate.includes('T')) {
+                originalTime = parsedDate.toTimeString().split(' ')[0];
+              }
+            } else {
+              // Fallback to current date if parsing fails
+              originalDate = new Date().toISOString().split('T')[0];
+            }
+          }
+        } else {
+          // Fallback to current date if no date provided
+          originalDate = new Date().toISOString().split('T')[0];
+        }
+
+        // Create a standardized entry format with preserved dates
         const journalEntry = {
           title: entry.title || 'Imported Entry',
           content: entry.transcription || entry.content || entry.text || '',
-          date: entry.date || new Date().toISOString().split('T')[0],
+          date: originalDate, // Use the original/parsed date
+          time: originalTime, // Use the original/parsed time
           mood: entry.mood || 3,
           tags: entry.tags || [],
           location: entry.location || undefined
