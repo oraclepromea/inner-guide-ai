@@ -100,7 +100,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ isLoading: true });
     try {
       const entries = await db.journalEntries.orderBy('createdAt').reverse().toArray();
-      set({ journalEntries: entries });
+      // Convert database IDs to strings to ensure compatibility with button handlers
+      const entriesWithStringIds = entries.map(entry => ({
+        ...entry,
+        id: entry.id?.toString() || ''
+      }));
+      set({ journalEntries: entriesWithStringIds });
     } catch (error) {
       console.error('Failed to load journal entries:', error);
       get().addNotification({

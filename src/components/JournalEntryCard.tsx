@@ -76,7 +76,12 @@ export const JournalEntryCard: React.FC<JournalEntryCardProps> = ({ entry }) => 
   const [editedTags, setEditedTags] = useState(entry.tags.join(', '));
 
   const handleDelete = async () => {
-    if (!entry.id) return;
+    console.log('Delete button clicked, entry.id:', entry.id);
+    if (!entry.id) {
+      console.error('Cannot delete entry: entry.id is missing');
+      alert('Cannot delete entry: Invalid entry ID');
+      return;
+    }
     
     if (window.confirm('Are you sure you want to delete this entry? This action cannot be undone.')) {
       setIsDeleting(true);
@@ -92,13 +97,16 @@ export const JournalEntryCard: React.FC<JournalEntryCardProps> = ({ entry }) => 
   };
 
   const handleAnalyze = async () => {
-    if (!entry.id) return;
+    console.log('AI Insights button clicked, entry.id:', entry.id);
+    if (!entry.id) {
+      console.error('Cannot analyze entry: entry.id is missing');
+      alert('Cannot analyze entry: Invalid entry ID');
+      return;
+    }
     
     setIsAnalyzing(true);
     try {
-      // Use the generateDeepInsight method from the store instead of generateAIInsights
       await generateDeepInsight(entry, 'Friend');
-      // Navigate to AI Insights tab after generation
       setActiveTab('ai-insights');
     } catch (error) {
       console.error('Failed to analyze entry:', error);
@@ -109,7 +117,12 @@ export const JournalEntryCard: React.FC<JournalEntryCardProps> = ({ entry }) => 
   };
 
   const handleSaveEdit = async () => {
-    if (!entry.id) return;
+    console.log('Save edit button clicked, entry.id:', entry.id);
+    if (!entry.id) {
+      console.error('Cannot save entry: entry.id is missing');
+      alert('Cannot save entry: Invalid entry ID');
+      return;
+    }
     
     setIsSaving(true);
     try {
