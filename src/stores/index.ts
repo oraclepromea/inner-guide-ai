@@ -20,22 +20,44 @@ import type {
   TherapistPersonality,
   TabType
 } from '../types';
-import { db, dbOperations } from '../lib/database';
+import { db, dbOperations, dbCache } from '../lib/database';
 import { aiService } from '../lib/aiService';
 
-// Auto-configure OpenRouter API from environment variables
+// Auto-configure OpenRouter API from environment variables and settings
 const initializeAIService = () => {
-  const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
+  // First try environment variable
+  let apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
+  
+  if (!apiKey || apiKey.trim() === '') {
+    // Try to get from stored settings if available
+    try {
+      const stored = localStorage.getItem('inner-guide-openrouter-key');
+      if (stored) {
+        apiKey = stored;
+      }
+    } catch (error) {
+      console.warn('Could not load stored settings for API key');
+    }
+  }
+  
   if (apiKey && apiKey.trim() !== '') {
     aiService.configure(apiKey);
-    console.log('✅ OpenRouter API auto-configured from environment');
+    console.log('✅ OpenRouter API configured successfully');
   } else {
-    console.warn('⚠️ OpenRouter API key not found in environment variables');
+    console.warn('⚠️ OpenRouter API key not found. AI analysis will be limited.');
+    console.warn('💡 Add VITE_OPENROUTER_API_KEY to your .env file or configure in settings to enable full AI analysis.');
   }
 };
 
 // Initialize AI service immediately
 initializeAIService();
+
+// Re-initialize when localStorage changes (for when user updates API key in settings)
+window.addEventListener('storage', (e) => {
+  if (e.key === 'inner-guide-openrouter-key') {
+    initializeAIService();
+  }
+});
 
 // REAL DATA ONLY: Store implementation with no mock data
 // All analytics and insights are based on actual user data
@@ -99,13 +121,23 @@ export const useAppStore = create<AppState>((set, get) => ({
   getJournalEntries: async () => {
     set({ isLoading: true });
     try {
-      const entries = await db.journalEntries.orderBy('createdAt').reverse().toArray();
+      // Clear cache to ensure fresh data
+      dbCache.clear();
+      
+      // Use the database operations helper for consistent data retrieval
+      const entries = await dbOperations.getJournalEntries(1000, 0); // Get more entries by default
+      
+      console.log(`📖 Loaded ${entries.length} journal entries from database`);
+      
       // Convert database IDs to strings to ensure compatibility with button handlers
-      const entriesWithStringIds = entries.map(entry => ({
+      const entriesWithStringIds = entries.map((entry: any) => ({
         ...entry,
         id: entry.id?.toString() || ''
       }));
+      
       set({ journalEntries: entriesWithStringIds });
+      
+      console.log(`✅ Journal entries loaded successfully: ${entriesWithStringIds.length} entries`);
     } catch (error) {
       console.error('Failed to load journal entries:', error);
       get().addNotification({
@@ -336,40 +368,64 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Deep AI Insights actions
   generateDeepInsight: async (entry: JournalEntry, userName: string = 'Friend') => {
+    console.log('🔄 Store.generateDeepInsight called with:', {
+      entryId: entry.id,
+      title: entry.title || 'Untitled',
+      contentLength: entry.content?.length,
+      userName
+    });
+
     try {
-      if (!entry.id) return;
+      if (!entry.id) {
+        console.warn('❌ No entry ID provided');
+        return;
+      }
       
       // Check if insight already exists
       const existingInsight = get().deepInsights.find(insight => insight.journalEntryId === entry.id?.toString());
       if (existingInsight) {
-        console.log('Deep insight already exists for this entry');
+        console.log('⚠️ Deep insight already exists for this entry:', existingInsight.id);
         return;
       }
 
+      console.log('🤖 Calling aiService.generateDeepInsight...');
       // REAL DATA ONLY: Use actual AI service for deep analysis
       const deepInsight = await aiService.generateDeepInsight(entry, userName);
+      
       if (deepInsight) {
+        console.log('✅ AI service returned insight, saving to database...');
         // Store in database
         const id = await db.deepInsights.add(deepInsight as any);
         const savedInsight = { ...deepInsight, id: id.toString() };
+        
+        console.log('💾 Saved to database with ID:', id);
         
         // Update state
         set(state => ({
           deepInsights: [savedInsight, ...state.deepInsights]
         }));
 
+        console.log('📊 Updated state, new insight count:', get().deepInsights.length);
+
         get().addNotification({
           type: 'success',
           title: 'AI Insight Generated',
           message: 'Deep spiritual insight has been created for your journal entry'
         });
+      } else {
+        console.warn('⚠️ AI service returned null (no insight generated)');
+        get().addNotification({
+          type: 'warning',
+          title: 'Insight Generation Skipped',
+          message: 'Unable to generate AI insight for this entry. Check console for details.'
+        });
       }
     } catch (error) {
-      console.error('Error generating deep insight:', error);
+      console.error('❌ Error in Store.generateDeepInsight:', error);
       get().addNotification({
         type: 'error',
         title: 'Insight Generation Failed',
-        message: 'Failed to generate AI insight. Please check your API configuration.'
+        message: 'Failed to generate AI insight. Please check your API configuration and console for details.'
       });
     }
   },

@@ -8,54 +8,166 @@ interface JournalEntryCardProps {
   entry: JournalEntry;
 }
 
-// Helper function to get country flag emoji
+// Helper function to get country flag emoji - Comprehensive coverage
 const getCountryFlag = (countryCode: string): string => {
   const flagMap: { [key: string]: string } = {
-    'US': '🇺🇸', 'USA': '🇺🇸', 'United States': '🇺🇸',
+    // Major countries and regions
+    'US': '🇺🇸', 'USA': '🇺🇸', 'United States': '🇺🇸', 'America': '🇺🇸',
     'CA': '🇨🇦', 'Canada': '🇨🇦',
-    'UK': '🇬🇧', 'United Kingdom': '🇬🇧', 'GB': '🇬🇧',
+    'UK': '🇬🇧', 'United Kingdom': '🇬🇧', 'GB': '🇬🇧', 'Britain': '🇬🇧', 'England': '🇬🇧',
     'FR': '🇫🇷', 'France': '🇫🇷',
-    'DE': '🇩🇪', 'Germany': '🇩🇪',
-    'IT': '🇮🇹', 'Italy': '🇮🇹',
-    'ES': '🇪🇸', 'Spain': '🇪🇸',
-    'JP': '🇯🇵', 'Japan': '🇯🇵',
+    'DE': '🇩🇪', 'Germany': '🇩🇪', 'Deutschland': '🇩🇪',
+    'IT': '🇮🇹', 'Italy': '🇮🇹', 'Italia': '🇮🇹',
+    'ES': '🇪🇸', 'Spain': '🇪🇸', 'España': '🇪🇸',
+    'JP': '🇯🇵', 'Japan': '🇯🇵', '日本': '🇯🇵',
     'AU': '🇦🇺', 'Australia': '🇦🇺',
-    'BR': '🇧🇷', 'Brazil': '🇧🇷',
-    'MX': '🇲🇽', 'Mexico': '🇲🇽',
+    'BR': '🇧🇷', 'Brazil': '🇧🇷', 'Brasil': '🇧🇷',
+    'MX': '🇲🇽', 'Mexico': '🇲🇽', 'México': '🇲🇽',
     'IN': '🇮🇳', 'India': '🇮🇳',
-    'CN': '🇨🇳', 'China': '🇨🇳',
-    'RU': '🇷🇺', 'Russia': '🇷🇺',
-    'KR': '🇰🇷', 'South Korea': '🇰🇷',
-    'NL': '🇳🇱', 'Netherlands': '🇳🇱',
-    'SE': '🇸🇪', 'Sweden': '🇸🇪',
-    'NO': '🇳🇴', 'Norway': '🇳🇴',
-    'DK': '🇩🇰', 'Denmark': '🇩🇰',
-    'FI': '🇫🇮', 'Finland': '🇫🇮',
-    'CH': '🇨🇭', 'Switzerland': '🇨🇭',
-    'AT': '🇦🇹', 'Austria': '🇦🇹',
-    'BE': '🇧🇪', 'Belgium': '🇧🇪',
+    'CN': '🇨🇳', 'China': '🇨🇳', '中国': '🇨🇳',
+    'RU': '🇷🇺', 'Russia': '🇷🇺', 'Россия': '🇷🇺',
+    'KR': '🇰🇷', 'South Korea': '🇰🇷', 'Korea': '🇰🇷', '대한민국': '🇰🇷',
+    
+    // European countries
+    'NL': '🇳🇱', 'Netherlands': '🇳🇱', 'Holland': '🇳🇱',
+    'SE': '🇸🇪', 'Sweden': '🇸🇪', 'Sverige': '🇸🇪',
+    'NO': '🇳🇴', 'Norway': '🇳🇴', 'Norge': '🇳🇴',
+    'DK': '🇩🇰', 'Denmark': '🇩🇰', 'Danmark': '🇩🇰',
+    'FI': '🇫🇮', 'Finland': '🇫🇮', 'Suomi': '🇫🇮',
+    'CH': '🇨🇭', 'Switzerland': '🇨🇭', 'Schweiz': '🇨🇭',
+    'AT': '🇦🇹', 'Austria': '🇦🇹', 'Österreich': '🇦🇹',
+    'BE': '🇧🇪', 'Belgium': '🇧🇪', 'België': '🇧🇪',
     'PT': '🇵🇹', 'Portugal': '🇵🇹',
-    'GR': '🇬🇷', 'Greece': '🇬🇷',
-    'TR': '🇹🇷', 'Turkey': '🇹🇷',
-    'PL': '🇵🇱', 'Poland': '🇵🇱',
-    'CZ': '🇨🇿', 'Czech Republic': '🇨🇿',
-    'HU': '🇭🇺', 'Hungary': '🇭🇺',
-    'RO': '🇷🇴', 'Romania': '🇷🇴',
-    'BG': '🇧🇬', 'Bulgaria': '🇧🇬',
-    'HR': '🇭🇷', 'Croatia': '🇭🇷',
-    'SI': '🇸🇮', 'Slovenia': '🇸🇮',
-    'SK': '🇸🇰', 'Slovakia': '🇸🇰',
-    'LT': '🇱🇹', 'Lithuania': '🇱🇹',
-    'LV': '🇱🇻', 'Latvia': '🇱🇻',
-    'EE': '🇪🇪', 'Estonia': '🇪🇪',
-    'IE': '🇮🇪', 'Ireland': '🇮🇪',
-    'IS': '🇮🇸', 'Iceland': '🇮🇸',
+    'GR': '🇬🇷', 'Greece': '🇬🇷', 'Ελλάδα': '🇬🇷',
+    'TR': '🇹🇷', 'Turkey': '🇹🇷', 'Türkiye': '🇹🇷',
+    'PL': '🇵🇱', 'Poland': '🇵🇱', 'Polska': '🇵🇱',
+    'CZ': '🇨🇿', 'Czech Republic': '🇨🇿', 'Czechia': '🇨🇿',
+    'HU': '🇭🇺', 'Hungary': '🇭🇺', 'Magyarország': '🇭🇺',
+    'RO': '🇷🇴', 'Romania': '🇷🇴', 'România': '🇷🇴',
+    'BG': '🇧🇬', 'Bulgaria': '🇧🇬', 'България': '🇧🇬',
+    'HR': '🇭🇷', 'Croatia': '🇭🇷', 'Hrvatska': '🇭🇷',
+    'SI': '🇸🇮', 'Slovenia': '🇸🇮', 'Slovenija': '🇸🇮',
+    'SK': '🇸🇰', 'Slovakia': '🇸🇰', 'Slovensko': '🇸🇰',
+    'LT': '🇱🇹', 'Lithuania': '🇱🇹', 'Lietuva': '🇱🇹',
+    'LV': '🇱🇻', 'Latvia': '🇱🇻', 'Latvija': '🇱🇻',
+    'EE': '🇪🇪', 'Estonia': '🇪🇪', 'Eesti': '🇪🇪',
+    'IE': '🇮🇪', 'Ireland': '🇮🇪', 'Éire': '🇮🇪',
+    'IS': '🇮🇸', 'Iceland': '🇮🇸', 'Ísland': '🇮🇸',
     'MT': '🇲🇹', 'Malta': '🇲🇹',
-    'CY': '🇨🇾', 'Cyprus': '🇨🇾',
-    'LU': '🇱🇺', 'Luxembourg': '🇱🇺'
+    'CY': '🇨🇾', 'Cyprus': '🇨🇾', 'Κύπρος': '🇨🇾',
+    'LU': '🇱🇺', 'Luxembourg': '🇱🇺',
+    
+    // Asia-Pacific
+    'TH': '🇹🇭', 'Thailand': '🇹🇭', 'ไทย': '🇹🇭',
+    'VN': '🇻🇳', 'Vietnam': '🇻🇳', 'Việt Nam': '🇻🇳',
+    'SG': '🇸🇬', 'Singapore': '🇸🇬',
+    'MY': '🇲🇾', 'Malaysia': '🇲🇾',
+    'ID': '🇮🇩', 'Indonesia': '🇮🇩',
+    'PH': '🇵🇭', 'Philippines': '🇵🇭',
+    'NZ': '🇳🇿', 'New Zealand': '🇳🇿',
+    'TW': '🇹🇼', 'Taiwan': '🇹🇼', '台灣': '🇹🇼',
+    'HK': '🇭🇰', 'Hong Kong': '🇭🇰', '香港': '🇭🇰',
+    'MO': '🇲🇴', 'Macau': '🇲🇴', '澳門': '🇲🇴',
+    'KH': '🇰🇭', 'Cambodia': '🇰🇭',
+    'LA': '🇱🇦', 'Laos': '🇱🇦',
+    'MM': '🇲🇲', 'Myanmar': '🇲🇲', 'Burma': '🇲🇲',
+    'BD': '🇧🇩', 'Bangladesh': '🇧🇩',
+    'PK': '🇵🇰', 'Pakistan': '🇵🇰',
+    'LK': '🇱🇰', 'Sri Lanka': '🇱🇰',
+    'NP': '🇳🇵', 'Nepal': '🇳🇵',
+    'BT': '🇧🇹', 'Bhutan': '🇧🇹',
+    'MN': '🇲🇳', 'Mongolia': '🇲🇳',
+    'KZ': '🇰🇿', 'Kazakhstan': '🇰🇿',
+    
+    // Middle East
+    'SA': '🇸🇦', 'Saudi Arabia': '🇸🇦',
+    'AE': '🇦🇪', 'UAE': '🇦🇪', 'United Arab Emirates': '🇦🇪',
+    'IL': '🇮🇱', 'Israel': '🇮🇱',
+    'PS': '🇵🇸', 'Palestine': '🇵🇸',
+    'JO': '🇯🇴', 'Jordan': '🇯🇴',
+    'LB': '🇱🇧', 'Lebanon': '🇱🇧',
+    'SY': '🇸🇾', 'Syria': '🇸🇾',
+    'IQ': '🇮🇶', 'Iraq': '🇮🇶',
+    'IR': '🇮🇷', 'Iran': '🇮🇷',
+    'KW': '🇰🇼', 'Kuwait': '🇰🇼',
+    'QA': '🇶🇦', 'Qatar': '🇶🇦',
+    'BH': '🇧🇭', 'Bahrain': '🇧🇭',
+    'OM': '🇴🇲', 'Oman': '🇴🇲',
+    'YE': '🇾🇪', 'Yemen': '🇾🇪',
+    
+    // Africa
+    'ZA': '🇿🇦', 'South Africa': '🇿🇦',
+    'EG': '🇪🇬', 'Egypt': '🇪🇬',
+    'MA': '🇲🇦', 'Morocco': '🇲🇦',
+    'DZ': '🇩🇿', 'Algeria': '🇩🇿',
+    'TN': '🇹🇳', 'Tunisia': '🇹🇳',
+    'LY': '🇱🇾', 'Libya': '🇱🇾',
+    'ET': '🇪🇹', 'Ethiopia': '🇪🇹',
+    'KE': '🇰🇪', 'Kenya': '🇰🇪',
+    'TZ': '🇹🇿', 'Tanzania': '🇹🇿',
+    'UG': '🇺🇬', 'Uganda': '🇺🇬',
+    'RW': '🇷🇼', 'Rwanda': '🇷🇼',
+    'GH': '🇬🇭', 'Ghana': '🇬🇭',
+    'NG': '🇳🇬', 'Nigeria': '🇳🇬',
+    'SN': '🇸🇳', 'Senegal': '🇸🇳',
+    'CI': '🇨🇮', 'Ivory Coast': '🇨🇮', 'Côte d\'Ivoire': '🇨🇮',
+    
+    // Americas
+    'AR': '🇦🇷', 'Argentina': '🇦🇷',
+    'CL': '🇨🇱', 'Chile': '🇨🇱',
+    'PE': '🇵🇪', 'Peru': '🇵🇪', 'Perú': '🇵🇪',
+    'CO': '🇨🇴', 'Colombia': '🇨🇴',
+    'VE': '🇻🇪', 'Venezuela': '🇻🇪',
+    'EC': '🇪🇨', 'Ecuador': '🇪🇨',
+    'BO': '🇧🇴', 'Bolivia': '🇧🇴',
+    'PY': '🇵🇾', 'Paraguay': '🇵🇾',
+    'UY': '🇺🇾', 'Uruguay': '🇺🇾',
+    'GY': '🇬🇾', 'Guyana': '🇬🇾',
+    'SR': '🇸🇷', 'Suriname': '🇸🇷',
+    'CR': '🇨🇷', 'Costa Rica': '🇨🇷',
+    'PA': '🇵🇦', 'Panama': '🇵🇦', 'Panamá': '🇵🇦',
+    'GT': '🇬🇹', 'Guatemala': '🇬🇹',
+    'HN': '🇭🇳', 'Honduras': '🇭🇳',
+    'SV': '🇸🇻', 'El Salvador': '🇸🇻',
+    'NI': '🇳🇮', 'Nicaragua': '🇳🇮',
+    'BZ': '🇧🇿', 'Belize': '🇧🇿',
+    'CU': '🇨🇺', 'Cuba': '🇨🇺',
+    'JM': '🇯🇲', 'Jamaica': '🇯🇲',
+    'DO': '🇩🇴', 'Dominican Republic': '🇩🇴',
+    'HT': '🇭🇹', 'Haiti': '🇭🇹', 'Haïti': '🇭🇹',
+    'TT': '🇹🇹', 'Trinidad and Tobago': '🇹🇹',
+    'BB': '🇧🇧', 'Barbados': '🇧🇧',
+    
+    // Oceania
+    'FJ': '🇫🇯', 'Fiji': '🇫🇯',
+    'PG': '🇵🇬', 'Papua New Guinea': '🇵🇬',
+    'TO': '🇹🇴', 'Tonga': '🇹🇴',
+    'WS': '🇼🇸', 'Samoa': '🇼🇸',
+    'VU': '🇻🇺', 'Vanuatu': '🇻🇺',
+    'SB': '🇸🇧', 'Solomon Islands': '🇸🇧',
+    'FM': '🇫🇲', 'Micronesia': '🇫🇲',
+    'PW': '🇵🇼', 'Palau': '🇵🇼',
+    'MH': '🇲🇭', 'Marshall Islands': '🇲🇭',
+    'NR': '🇳🇷', 'Nauru': '🇳🇷',
+    'KI': '🇰🇮', 'Kiribati': '🇰🇮',
+    'TV': '🇹🇻', 'Tuvalu': '🇹🇻'
   };
   
-  return flagMap[countryCode] || flagMap[countryCode.toUpperCase()] || '🌍';
+  // Try exact match first, then case-insensitive match
+  const flag = flagMap[countryCode] || flagMap[countryCode.toUpperCase()] || flagMap[countryCode.toLowerCase()];
+  
+  // If no flag found, try partial matching for common country name variations
+  if (!flag) {
+    const lowerCode = countryCode.toLowerCase();
+    for (const [key, value] of Object.entries(flagMap)) {
+      if (key.toLowerCase().includes(lowerCode) || lowerCode.includes(key.toLowerCase())) {
+        return value;
+      }
+    }
+  }
+  
+  // Return the flag or a default location pin emoji if no country match
+  return flag || '📍';
 };
 
 export const JournalEntryCard: React.FC<JournalEntryCardProps> = ({ entry }) => {

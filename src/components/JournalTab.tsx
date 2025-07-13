@@ -57,7 +57,21 @@ export const JournalTab: React.FC = () => {
       let comparison = 0;
       
       if (sortBy === 'date') {
-        comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        // Use entry.date first (YYYY-MM-DD format), then fallback to createdAt for chronological ordering
+        const dateA = a.date ? new Date(a.date).getTime() : new Date(a.createdAt).getTime();
+        const dateB = b.date ? new Date(b.date).getTime() : new Date(b.createdAt).getTime();
+        comparison = dateA - dateB;
+        
+        // If dates are the same, use time or createdAt for sub-sorting
+        if (comparison === 0) {
+          if (a.time && b.time) {
+            const timeA = new Date(`${a.date}T${a.time}`).getTime();
+            const timeB = new Date(`${b.date}T${b.time}`).getTime();
+            comparison = timeA - timeB;
+          } else {
+            comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+          }
+        }
       } else if (sortBy === 'mood') {
         comparison = (a.mood || 0) - (b.mood || 0);
       }

@@ -9,7 +9,6 @@ const OPENROUTER_API_BASE = 'https://openrouter.ai/api/v1';
 
 interface OpenRouterConfig {
   apiKey: string;
-  model: string;
   appName: string;
   siteUrl: string;
 }
@@ -95,12 +94,11 @@ class AIService {
 
     this.config = {
       apiKey: apiKey.trim(),
-      model: 'anthropic/claude-3-sonnet', // Using more powerful model for deep insights
       appName: 'Inner Guide AI',
       siteUrl: 'https://inner-guide-ai.app'
     };
     this.isConfigured = true;
-    console.log('AI Service: Configured successfully with Claude-3 Sonnet for deep insights');
+    console.log('AI Service: Configured successfully with OpenRouter auto-switch');
   }
 
   // REAL DATA ONLY: Check if service is properly configured
@@ -108,13 +106,15 @@ class AIService {
     return this.isConfigured && this.config !== null;
   }
 
-  // REAL DATA ONLY: Make actual API request to OpenRouter
-  private async makeAPIRequest(messages: any[], maxTokens: number = 2000): Promise<any> {
+  // REAL DATA ONLY: Make actual API request to OpenRouter with auto-switch
+  private async makeAPIRequest(messages: any[], maxTokens: number = 1000): Promise<any> {
     if (!this.isReady() || !this.config) {
       throw new Error('AI Service not configured. Please set up OpenRouter API key.');
     }
 
     try {
+      console.log('Making API request with OpenRouter auto-switch');
+      
       const response = await fetch(`${OPENROUTER_API_BASE}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -124,20 +124,27 @@ class AIService {
           'X-Title': this.config.appName,
         },
         body: JSON.stringify({
-          model: this.config.model,
+          // Let OpenRouter auto-switch to the best available model
+          model: 'openrouter/auto',
           messages,
           max_tokens: maxTokens,
-          temperature: 0.8, // Higher creativity for compassionate insights
+          temperature: 0.7,
           top_p: 0.9,
+          // Prefer free models when available
+          route: 'fallback'
         }),
       });
 
+      console.log(`API Response Status: ${response.status}`);
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        console.error('OpenRouter API Error:', errorData);
         throw new Error(`OpenRouter API error: ${response.status} - ${errorData.error?.message || response.statusText}`);
       }
 
       const data = await response.json();
+      console.log('API Response received successfully');
       
       if (!data.choices || !data.choices[0] || !data.choices[0].message) {
         throw new Error('Invalid response format from OpenRouter API');
@@ -150,19 +157,43 @@ class AIService {
     }
   }
 
+  // Helper method to clean API responses that may contain markdown
+  private cleanJsonResponse(responseText: string): string {
+    let cleaned = responseText.trim();
+    
+    // Remove markdown code blocks
+    if (cleaned.startsWith('```json')) {
+      cleaned = cleaned.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+    } else if (cleaned.startsWith('```')) {
+      cleaned = cleaned.replace(/^```\s*/, '').replace(/\s*```$/, '');
+    }
+    
+    // Remove any remaining backticks
+    cleaned = cleaned.replace(/^`+|`+$/g, '').trim();
+    
+    return cleaned;
+  }
+
   // REAL DATA ONLY: Generate deep, compassionate AI insights
   async generateDeepInsight(entry: JournalEntry, userName: string = 'Friend'): Promise<DeepAIInsight | null> {
+    console.log('🔄 AIService.generateDeepInsight called with:', {
+      entryId: entry.id,
+      contentLength: entry.content?.length,
+      isReady: this.isReady()
+    });
+
     if (!this.isReady()) {
-      console.warn('AI Service: Not configured, skipping deep insight generation');
+      console.warn('❌ AI Service: Not configured, skipping deep insight generation');
       return null;
     }
 
     if (!entry.content || entry.content.trim().length < 20) {
-      console.warn('AI Service: Entry content too short for meaningful deep analysis');
+      console.warn('❌ AI Service: Entry content too short for meaningful deep analysis');
       return null;
     }
 
     try {
+      console.log('🤖 Starting deep insight generation...');
       const prompt = `As a compassionate spiritual guide and depth psychologist, provide a deep, healing analysis of this journal entry. Write with warmth, wisdom, and genuine care.
 
 Journal Entry Details:
@@ -175,7 +206,6 @@ Entry Content:
 "${entry.content}"
 
 Please provide a JSON response with:
-
 1. primaryEmotion: The core emotion detected (e.g., "frustration", "grief", "joy", "anxiety", etc.)
 2. intensity: Emotional intensity from 1-10
 3. energy: Energy level ("very low", "low", "moderate", "high", "very high")
@@ -209,10 +239,16 @@ Return only valid JSON, no other text.`;
         }
       ];
 
+      console.log('📤 Making API request to OpenRouter...');
       const response = await this.makeAPIRequest(messages, 2500);
+      console.log('📥 Received response from OpenRouter:', response.substring(0, 200) + '...');
       
       try {
-        const analysisResult = JSON.parse(response);
+        const cleanedResponse = this.cleanJsonResponse(response);
+        console.log('🧹 Cleaned response for parsing...');
+        
+        const analysisResult = JSON.parse(cleanedResponse);
+        console.log('✅ Successfully parsed JSON response');
         
         // Validate and structure the response
         const deepInsight: DeepAIInsight = {
@@ -244,13 +280,15 @@ Return only valid JSON, no other text.`;
           }
         };
 
+        console.log('✅ Deep insight created successfully:', deepInsight.id);
         return deepInsight;
       } catch (parseError) {
-        console.error('AI Service: Failed to parse deep insight response:', parseError);
+        console.error('❌ AI Service: Failed to parse deep insight response:', parseError);
+        console.error('❌ Raw response was:', response);
         return null;
       }
     } catch (error) {
-      console.error('AI Service: Deep insight generation failed:', error);
+      console.error('❌ AI Service: Deep insight generation failed:', error);
       return null;
     }
   }
@@ -303,7 +341,8 @@ Return only valid JSON, no other text.`;
       const response = await this.makeAPIRequest(messages, 800);
       
       try {
-        const analysisResult = JSON.parse(response);
+        const cleanedResponse = this.cleanJsonResponse(response);
+        const analysisResult = JSON.parse(cleanedResponse);
         
         // Validate the response structure
         if (!analysisResult.sentiment || !analysisResult.tone) {
@@ -498,7 +537,7 @@ Return as a JSON array of strings. Return only valid JSON, no other text.`;
   getConfigurationStatus(): { configured: boolean; model?: string } {
     return {
       configured: this.isConfigured,
-      model: this.config?.model
+      model: this.isConfigured ? 'OpenRouter Auto-Switch' : undefined
     };
   }
 

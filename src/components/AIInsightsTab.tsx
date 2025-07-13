@@ -312,25 +312,72 @@ export const AIInsightsTab: React.FC = () => {
       return;
     }
 
+    console.log('🔄 Starting AI insight generation for all entries...');
+    console.log(`📊 Found ${journalEntries.length} journal entries`);
+    console.log(`📊 Found ${deepInsights.length} existing insights`);
+
     setIsGeneratingAll(true);
     let successCount = 0;
     let errorCount = 0;
+    const errors: string[] = [];
 
     try {
-      for (const entry of journalEntries) {
+      for (let i = 0; i < journalEntries.length; i++) {
+        const entry = journalEntries[i];
+        console.log(`\n🔍 Processing entry ${i + 1}/${journalEntries.length}:`, {
+          id: entry.id,
+          title: entry.title || 'Untitled',
+          contentLength: entry.content?.length || 0,
+          date: entry.date
+        });
+
         // Check if insight already exists
         const existingInsight = deepInsights.find(insight => insight.journalEntryId === entry.id?.toString());
-        if (existingInsight) continue;
+        if (existingInsight) {
+          console.log(`⚠️ Skipping entry ${entry.id} - insight already exists`);
+          continue;
+        }
 
         try {
+          console.log(`🤖 Generating AI insight for entry ${entry.id}...`);
           await generateDeepInsight(entry);
+          console.log(`✅ Successfully generated insight for entry ${entry.id}`);
           successCount++;
         } catch (err) {
-          errorCount++;
+          console.error(`❌ Failed to generate insight for entry ${entry.id}:`, err);
+          
+          // Check for rate limiting
+          if (err instanceof Error && err.message.includes('429')) {
+            console.log('⏸️ Rate limit hit - waiting 70 seconds before continuing...');
+            await new Promise(resolve => setTimeout(resolve, 70000)); // Wait 70 seconds for rate limit reset
+            
+            // Retry the same entry
+            try {
+              console.log(`🔄 Retrying entry ${entry.id} after rate limit wait...`);
+              await generateDeepInsight(entry);
+              console.log(`✅ Successfully generated insight for entry ${entry.id} (after retry)`);
+              successCount++;
+            } catch (retryErr) {
+              console.error(`❌ Failed to generate insight for entry ${entry.id} even after retry:`, retryErr);
+              errors.push(`Entry ${entry.id}: ${retryErr instanceof Error ? retryErr.message : 'Unknown error'}`);
+              errorCount++;
+            }
+          } else {
+            errors.push(`Entry ${entry.id}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+            errorCount++;
+          }
         }
         
-        // Small delay to avoid rate limits
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Longer delay between requests to avoid rate limits (65 seconds for free tier)
+        if (i < journalEntries.length - 1) { // Don't wait after the last entry
+          console.log('⏳ Waiting 65 seconds before next request to avoid rate limits...');
+          await new Promise(resolve => setTimeout(resolve, 65000));
+        }
+      }
+
+      console.log(`\n📈 Generation complete! Success: ${successCount}, Errors: ${errorCount}`);
+      if (errors.length > 0) {
+        console.log('❌ Error details:', errors);
       }
 
       if (successCount > 0) {
@@ -339,12 +386,13 @@ export const AIInsightsTab: React.FC = () => {
           `Successfully generated ${successCount} AI insights${errorCount > 0 ? ` (${errorCount} failed)` : ''}.`
         );
       } else if (errorCount > 0) {
-        error('Generation failed', `Failed to generate insights for ${errorCount} entries.`);
+        error('Generation failed', `Failed to generate insights for ${errorCount} entries. Check console for details.`);
       } else {
         success('Already complete', 'All journal entries already have AI insights.');
       }
     } catch (err) {
-      error('Generation failed', 'Failed to generate AI insights. Please try again.');
+      console.error('❌ Critical error in generateInsightsForAllEntries:', err);
+      error('Generation failed', 'Failed to generate AI insights. Check console for details.');
     } finally {
       setIsGeneratingAll(false);
     }

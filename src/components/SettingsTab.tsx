@@ -1,9 +1,10 @@
 import React, { useState, useRef } from 'react';
-import { Settings, Download, Upload, Trash2, Shield, Moon, Sun, Bell, Database, AlertTriangle, CheckCircle, RefreshCw, FileText } from 'lucide-react';
+import { Settings, Download, Upload, Trash2, Shield, Moon, Sun, Bell, Database, AlertTriangle, CheckCircle, RefreshCw, FileText, Key, Eye, EyeOff } from 'lucide-react';
 import { useAppStore } from '../stores';
 import { useNotificationHelpers } from './NotificationSystem';
 import { ImportJournalFiles } from './ImportJournalFiles';
 import { AutoImportJournalFiles } from './AutoImportJournalFiles';
+import { aiService } from '../lib/aiService';
 
 export const SettingsTab: React.FC = () => {
   const { 
@@ -22,6 +23,80 @@ export const SettingsTab: React.FC = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showJournalImport, setShowJournalImport] = useState(true); // Changed to true to show by default
   const [importMode, setImportMode] = useState<'auto' | 'manual'>('auto');
+  const [apiKey, setApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [isTestingApi, setIsTestingApi] = useState(false);
+
+  // Load current API key from localStorage on component mount
+  React.useEffect(() => {
+    try {
+      const stored = localStorage.getItem('inner-guide-openrouter-key');
+      if (stored) {
+        setApiKey(stored);
+      }
+    } catch (error) {
+      console.warn('Could not load stored API key');
+    }
+  }, []);
+
+  const handleApiKeyUpdate = async () => {
+    try {
+      if (apiKey.trim()) {
+        // Store API key in localStorage
+        localStorage.setItem('inner-guide-openrouter-key', apiKey.trim());
+        // Configure AI service
+        aiService.configure(apiKey.trim());
+        success('API Key Updated', 'OpenRouter API key has been configured successfully');
+      } else {
+        // Clear stored API key
+        localStorage.removeItem('inner-guide-openrouter-key');
+        aiService.clearConfiguration();
+        success('API Key Cleared', 'OpenRouter API key has been removed');
+      }
+    } catch (err) {
+      console.error('Failed to update API key:', err);
+      error('Configuration Error', 'Failed to update API key configuration');
+    }
+  };
+
+  const testApiConnection = async () => {
+    if (!apiKey.trim()) {
+      error('No API Key', 'Please enter an API key first');
+      return;
+    }
+
+    setIsTestingApi(true);
+    try {
+      // Configure with the current key
+      aiService.configure(apiKey.trim());
+      
+      // Create a simple test entry
+      const testEntry = {
+        id: 'test',
+        content: 'This is a test entry to verify the API connection is working.',
+        date: new Date().toISOString().split('T')[0],
+        title: 'API Test',
+        mood: 3,
+        tags: ['test'],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      // Try to analyze it
+      const result = await aiService.analyzeEntry(testEntry);
+      
+      if (result) {
+        success('API Test Successful', 'OpenRouter API is working correctly!');
+      } else {
+        error('API Test Failed', 'API connection failed or returned no results');
+      }
+    } catch (err) {
+      console.error('API test failed:', err);
+      error('API Test Failed', 'Failed to connect to OpenRouter API. Please check your API key.');
+    } finally {
+      setIsTestingApi(false);
+    }
+  };
 
   const handleExport = async () => {
     if (isExporting) return;
@@ -444,6 +519,71 @@ export const SettingsTab: React.FC = () => {
             </button>
           </div>
 
+          {/* OpenRouter API Configuration */}
+          <div className="p-4 bg-gradient-to-r from-purple-500/10 to-blue-500/10 rounded-xl border border-purple-500/20">
+            <div className="flex items-center space-x-3 mb-4">
+              <Key className="w-5 h-5 text-purple-400" />
+              <h4 className="font-semibold text-purple-300">OpenRouter API Configuration</h4>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="api-key" className="block text-sm font-medium text-gray-300 mb-2">
+                  API Key
+                </label>
+                <div className="relative">
+                  <input
+                    id="api-key"
+                    type={showApiKey ? 'text' : 'password'}
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="Enter your OpenRouter API key..."
+                    className="w-full px-3 py-2 pr-20 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  />
+                  <div className="absolute inset-y-0 right-0 flex items-center space-x-1 pr-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="text-gray-400 hover:text-white"
+                    >
+                      {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button
+                  onClick={handleApiKeyUpdate}
+                  className="flex items-center justify-center space-x-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors flex-1"
+                >
+                  <Key className="w-4 h-4" />
+                  <span>{apiKey.trim() ? 'Update API Key' : 'Clear API Key'}</span>
+                </button>
+                
+                <button
+                  onClick={testApiConnection}
+                  disabled={!apiKey.trim() || isTestingApi}
+                  className="flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-1"
+                >
+                  {isTestingApi ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <CheckCircle className="w-4 h-4" />
+                  )}
+                  <span>{isTestingApi ? 'Testing...' : 'Test Connection'}</span>
+                </button>
+              </div>
+              
+              <div className="text-xs text-gray-400 space-y-1">
+                <p>• Get your API key from <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300 underline">OpenRouter.ai</a></p>
+                <p>• Your API key is stored locally and never shared</p>
+                <p>• Required for deep AI analysis and spiritual insights</p>
+                <p>• Without an API key, only basic pattern matching is available</p>
+              </div>
+            </div>
+          </div>
+
           {/* OpenRouter API Status */}
           <div className="p-4 bg-gradient-to-r from-purple-500/10 to-blue-500/10 rounded-xl border border-purple-500/20">
             <div className="flex items-center space-x-3 mb-3">
@@ -454,20 +594,39 @@ export const SettingsTab: React.FC = () => {
             {import.meta.env.VITE_OPENROUTER_API_KEY ? (
               <div className="flex items-center space-x-2">
                 <CheckCircle className="w-4 h-4 text-green-400" />
-                <span className="text-sm text-green-300">API key configured - Real AI analysis enabled</span>
+                <span className="text-sm text-green-300">API key configured via environment - Real AI analysis enabled</span>
               </div>
             ) : (
               <div className="space-y-3">
                 <div className="flex items-center space-x-2">
                   <AlertTriangle className="w-4 h-4 text-yellow-400" />
-                  <span className="text-sm text-yellow-300">No API key - Using fallback analysis</span>
+                  <span className="text-sm text-yellow-300">No environment API key found</span>
                 </div>
                 <div className="text-xs text-gray-400">
-                  To enable real AI analysis, add your OpenRouter API key to the .env file:
+                  You can either configure the API key above or add it to your .env file:
                   <code className="block mt-2 p-2 bg-gray-800 rounded text-gray-300">
                     VITE_OPENROUTER_API_KEY=your_api_key_here
                   </code>
                 </div>
+              </div>
+            )}
+          </div>
+
+          {/* Current API Status */}
+          <div className="p-3 bg-gray-800/50 rounded-lg border border-gray-600/30">
+            <div className="flex items-center space-x-2 mb-2">
+              <div className="w-2 h-2 rounded-full bg-gray-400"></div>
+              <span className="text-sm font-medium text-gray-300">Current Status</span>
+            </div>
+            {aiService.isReady() ? (
+              <div className="flex items-center space-x-2">
+                <CheckCircle className="w-4 h-4 text-green-400" />
+                <span className="text-sm text-green-300">✅ AI Service Ready - Real analysis enabled</span>
+              </div>
+            ) : (
+              <div className="flex items-center space-x-2">
+                <AlertTriangle className="w-4 h-4 text-yellow-400" />
+                <span className="text-sm text-yellow-300">⚠️ No API key configured - Limited analysis only</span>
               </div>
             )}
           </div>
